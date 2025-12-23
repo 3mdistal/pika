@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://teenylilthoughts.local/schema.schema.json",
+  "title": "Obsidian Vault Template Schema",
+  "description": "Schema for defining types, frontmatter, and body sections for Obsidian vault templates",
+  "type": "object",
+  "required": ["enums", "types"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Reference to this JSON Schema for editor support"
+    },
+    "enums": {
+      "type": "object",
+      "description": "Shared enum definitions that can be referenced by frontmatter fields",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1
+      }
+    },
+    "types": {
+      "type": "object",
+      "description": "Top-level type families (objective, entity, idea, reflection)",
+      "additionalProperties": {
+        "$ref": "#/definitions/typeNode"
+      }
+    },
+    "dynamic_sources": {
+      "type": "object",
+      "description": "Dynamic data sources that query the vault for options",
+      "additionalProperties": {
+        "$ref": "#/definitions/dynamicSource"
+      }
+    }
+  },
+  "definitions": {
+    "typeDefinition": {
+      "type": "object",
+      "required": ["output_dir", "frontmatter"],
+      "additionalProperties": false,
+      "properties": {
+        "output_dir": {
+          "type": "string",
+          "description": "Directory path relative to vault root where files of this type are created"
+        },
+        "name_field": {
+          "type": "string",
+          "description": "Label for the name prompt (default: 'Name')"
+        },
+        "frontmatter": {
+          "type": "object",
+          "description": "Frontmatter field definitions in order",
+          "additionalProperties": {
+            "$ref": "#/definitions/frontmatterField"
+          }
+        },
+        "frontmatter_order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Order of frontmatter fields (keys from frontmatter object)"
+        },
+        "body_sections": {
+          "type": "array",
+          "description": "Body sections to generate after frontmatter",
+          "items": {
+            "$ref": "#/definitions/bodySection"
+          }
+        }
+      }
+    },
+    "typeNode": {
+      "type": "object",
+      "description": "Recursive type family or leaf definition",
+      "additionalProperties": false,
+      "properties": {
+        "subtypes": {
+          "type": "object",
+          "description": "Nested subtype map",
+          "additionalProperties": {
+            "$ref": "#/definitions/typeNode"
+          }
+        },
+        "output_dir": { "type": "string" },
+        "name_field": {
+          "type": "string",
+          "description": "Name field for type"
+        },
+        "frontmatter": {
+          "$ref": "#/definitions/typeDefinition/properties/frontmatter"
+        },
+        "frontmatter_order": { "type": "array", "items": { "type": "string" } },
+        "body_sections": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/bodySection" }
+        }
+      },
+      "anyOf": [
+        { "required": ["subtypes"] },
+        { "required": ["output_dir", "frontmatter"] }
+      ]
+    },
+    "frontmatterField": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "Static value (use $NOW for current datetime, $TODAY for date)"
+        },
+        "prompt": {
+          "type": "string",
+          "enum": ["input", "select", "dynamic", "multi-input"],
+          "description": "Type of prompt: input (free text), select (from enum), dynamic (from vault query), multi-input (comma-separated list)"
+        },
+        "label": {
+          "type": "string",
+          "description": "Label shown to user for input prompts"
+        },
+        "enum": {
+          "type": "string",
+          "description": "Reference to an enum defined in the enums section"
+        },
+        "source": {
+          "type": "string",
+          "description": "Reference to a dynamic_source for dynamic prompts"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["wikilink", "quoted-wikilink", "plain"],
+          "description": "How to format the value in frontmatter"
+        },
+        "default": {
+          "type": "string",
+          "description": "Default value if user skips the prompt"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether this field is required (user cannot skip)"
+        },
+        "list_format": {
+          "type": "string",
+          "enum": ["yaml-array", "comma-separated"],
+          "description": "For multi-input fields, how to format the list"
+        }
+      }
+    },
+    "bodySection": {
+      "type": "object",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Section heading text"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 6,
+          "default": 2,
+          "description": "Heading level (2 = ##, 3 = ###, etc.)"
+        },
+        "content_type": {
+          "type": "string",
+          "enum": ["none", "paragraphs", "bullets", "checkboxes"],
+          "default": "none",
+          "description": "Type of content placeholder to add"
+        },
+        "prompt": {
+          "type": "string",
+          "enum": ["multi-input"],
+          "description": "If set, prompts user for initial content during creation"
+        },
+        "prompt_label": {
+          "type": "string",
+          "description": "Label for the content prompt"
+        },
+        "children": {
+          "type": "array",
+          "description": "Nested subsections",
+          "items": {
+            "$ref": "#/definitions/bodySection"
+          }
+        }
+      }
+    },
+    "dynamicSource": {
+      "type": "object",
+      "required": ["dir"],
+      "additionalProperties": false,
+      "properties": {
+        "dir": {
+          "type": "string",
+          "description": "Directory to scan for files"
+        },
+        "filter": {
+          "type": "object",
+          "description": "Filter criteria for files",
+          "additionalProperties": {
+            "$ref": "#/definitions/filterCondition"
+          }
+        }
+      }
+    },
+    "filterCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "equals": {
+          "type": "string",
+          "description": "Field must equal this value"
+        },
+        "not_equals": {
+          "type": "string",
+          "description": "Field must not equal this value"
+        },
+        "in": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Field must be one of these values"
+        },
+        "not_in": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Field must not be one of these values"
+        }
+      }
+    }
+  }
+}
