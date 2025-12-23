@@ -118,3 +118,58 @@ test_list_deep_subtype_nonexistent() {
     assert_equals "1" "$exit_code" "Should fail for invalid deep path"
     assert_contains "$output" "Unknown type" "Should report unknown type"
 }
+
+# ============================================
+# List --paths Flag Tests
+# ============================================
+
+test_list_paths_flag() {
+    local output=$(run_ovault "" list --paths idea)
+    
+    assert_contains "$output" "Ideas/Sample Idea.md" "Should show full path for Sample Idea"
+    assert_contains "$output" "Ideas/Another Idea.md" "Should show full path for Another Idea"
+}
+
+test_list_paths_with_subtype() {
+    local output=$(run_ovault "" list --paths objective/task)
+    
+    assert_contains "$output" "Objectives/Tasks/Sample Task.md" "Should show full path for task"
+}
+
+# ============================================
+# List --fields Flag Tests
+# ============================================
+
+test_list_fields_single() {
+    local output=$(run_ovault "" list --fields=status idea)
+    
+    assert_contains "$output" "NAME" "Should have NAME header"
+    assert_contains "$output" "STATUS" "Should have STATUS header"
+    assert_contains "$output" "raw" "Should show status value"
+}
+
+test_list_fields_multiple() {
+    local output=$(run_ovault "" list --fields=type,status objective/task)
+    
+    assert_contains "$output" "NAME" "Should have NAME header"
+    assert_contains "$output" "TYPE" "Should have TYPE header"
+    assert_contains "$output" "STATUS" "Should have STATUS header"
+    assert_contains "$output" "objective" "Should show type value"
+    assert_contains "$output" "in-flight" "Should show status value"
+}
+
+test_list_fields_with_paths() {
+    local output=$(run_ovault "" list --paths --fields=status idea)
+    
+    assert_contains "$output" "PATH" "Should have PATH header instead of NAME"
+    assert_contains "$output" "Ideas/" "Should show path"
+}
+
+test_list_fields_missing_value() {
+    # Ideas don't have 'deadline' field, should show placeholder
+    local output=$(run_ovault "" list --fields=deadline idea)
+    
+    assert_contains "$output" "DEADLINE" "Should have DEADLINE header"
+    # Should have placeholder character for missing values
+    assert_contains "$output" "—" "Should show placeholder for missing field"
+}
