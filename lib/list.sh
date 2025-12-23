@@ -3,6 +3,56 @@
 # List helpers for querying vault objects by type.
 # Expects: SCHEMA_FILE, VAULT_DIR set by caller.
 
+# Extract a frontmatter field value from a file.
+# Args: file_path, field_name
+# Output: field value or empty string
+extract_frontmatter_field() {
+    local file="$1"
+    local field="$2"
+    
+    awk -F': ' -v f="$field" '
+        /^---$/ { if (in_fm) exit; in_fm=1; next }
+        in_fm && $1==f { $1=""; print substr($0,2); exit }
+    ' "$file"
+}
+
+# Print results as a table with columns.
+# Args: fields (comma-separated), then file paths via stdin
+# Output: formatted table
+print_table() {
+    local fields="$1"
+    local show_paths="$2"
+    local field_arr=(${(s:,:)fields})
+    local file name row val
+    
+    # Build header
+    local header="NAME"
+    [[ "$show_paths" == "true" ]] && header="PATH"
+    for f in "${field_arr[@]}"; do
+        header+="\t${(U)f}"
+    done
+    echo "$header"
+    
+    # Process each file
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        
+        if [[ "$show_paths" == "true" ]]; then
+            # Path relative to vault
+            name="${file#$VAULT_DIR/}"
+        else
+            name=$(basename "$file" .md)
+        fi
+        
+        row="$name"
+        for f in "${field_arr[@]}"; do
+            val=$(extract_frontmatter_field "$file" "$f")
+            row+="\t${val:-—}"
+        done
+        echo "$row"
+    done | column -t -s $'\t'
+}
+
 # Convert a type path (e.g., "objective/task") to a jq getpath array.
 # Args: type_path (slash-separated)
 # Output: JSON array like ["types","objective","subtypes","task"]
@@ -54,9 +104,9 @@ get_subtypes_for_path() {
     jq -r --argjson p "$jq_path" 'getpath($p).subtypes | keys[]' "$SCHEMA_FILE"
 }
 
-# List .md files in a directory (basenames without extension).
+# List .md files in a directory.
 # Args: directory path
-# Output: newline-separated filenames
+# Output: newline-separated full paths
 list_files_in_dir() {
     local dir="$1"
     
@@ -65,7 +115,7 @@ list_files_in_dir() {
     fi
     
     for file in "$dir"/*.md(N); do
-        [[ -f "$file" ]] && basename "$file" .md
+        [[ -f "$file" ]] && echo "$file"
     done
 }
 
@@ -96,10 +146,12 @@ list_objects_recursive() {
 }
 
 # Main entry point: list objects by type path.
-# Args: type_path (slash-separated, e.g., "objective" or "objective/task")
-# Output: newline-separated object names, sorted
+# Args: type_path, show_paths (true/false), fields (comma-separated, optional)
+# Output: formatted list (names, paths, or table)
 list_objects_by_type() {
     local type_path="$1"
+    local show_paths="${2:-false}"
+    local fields="${3:-}"
     
     # Validate type exists
     local jq_path=$(type_path_to_jq_path "$type_path")
@@ -108,5 +160,25 @@ list_objects_by_type() {
         return 1
     fi
     
-    list_objects_recursive "$type_path" | sort
+    local files=$(list_objects_recursive "$type_path" | sort)
+    
+    # Handle empty results
+    if [[ -z "$files" ]]; then
+        return 0
+    fi
+    
+    if [[ -n "$fields" ]]; then
+        # Table output with fields
+        echo "$files" | print_table "$fields" "$show_paths"
+    elif [[ "$show_paths" == "true" ]]; then
+        # Paths relative to vault
+        echo "$files" | while IFS= read -r f; do
+            [[ -n "$f" ]] && echo "${f#$VAULT_DIR/}"
+        done
+    else
+        # Default: basenames only
+        echo "$files" | while IFS= read -r f; do
+            [[ -n "$f" ]] && basename "$f" .md
+        done
+    fi
 }

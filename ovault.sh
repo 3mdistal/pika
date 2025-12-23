@@ -429,17 +429,42 @@ edit_existing() {
 
 # --- List mode ---
 list_type() {
+    local show_paths=false
+    local fields=""
+    
+    # Parse flags
+    while [[ "${1:-}" == --* ]]; do
+        case "$1" in
+            --paths)
+                show_paths=true
+                shift
+                ;;
+            --fields=*)
+                fields="${1#--fields=}"
+                shift
+                ;;
+            *)
+                echo "${RED}Unknown option: $1${NC}"
+                exit 1
+                ;;
+        esac
+    done
+    
     local type_path="$1"
     
     if [[ -z "$type_path" ]]; then
-        echo "${RED}Usage: ovault list <type>[/<subtype>]${NC}"
+        echo "${RED}Usage: ovault list [options] <type>[/<subtype>]${NC}"
+        echo ""
+        echo "${GREEN}Options:${NC}"
+        echo "  --paths              Show file paths instead of names"
+        echo "  --fields=f1,f2,...   Show frontmatter fields in a table"
         echo ""
         echo "${GREEN}Available types:${NC}"
         get_type_families | sed 's/^/  /'
         exit 1
     fi
     
-    list_objects_by_type "$type_path"
+    list_objects_by_type "$type_path" "$show_paths" "$fields"
 }
 
 # --- Help ---
@@ -449,7 +474,7 @@ show_help() {
     echo "${GREEN}Usage:${NC}"
     echo "  ovault new [type]              Create a new object (interactive if no type)"
     echo "  ovault edit <file>             Edit an existing file's frontmatter"
-    echo "  ovault list <type>[/<subtype>] List objects of a given type"
+  echo "  ovault list [options] <type>   List objects of a given type"
     echo "  ovault help                    Show this help"
     echo ""
     echo "${GREEN}Available types:${NC}"
@@ -463,6 +488,8 @@ show_help() {
     echo "  ovault list idea        # List all ideas"
     echo "  ovault list objective   # List all objectives (tasks, milestones, etc.)"
     echo "  ovault list objective/task  # List only tasks"
+    echo "  ovault list --paths idea    # Show file paths"
+    echo "  ovault list --fields=status,priority idea  # Show as table"
 }
 
 # --- Main ---
@@ -478,7 +505,8 @@ case "${1:-}" in
         edit_existing "$2"
         ;;
     list)
-        list_type "${2:-}"
+        shift
+        list_type "$@"
         ;;
     help|-h|--help)
         show_help

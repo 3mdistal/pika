@@ -52,10 +52,15 @@ ovault edit path/to/file.md
 ovault edit Objectives/Tasks/My\ Task.md
 
 # List objects by type
-ovault list idea              # List all ideas
-ovault list objective         # List all objectives (tasks, milestones, etc.)
-ovault list objective/task    # List only tasks
+ovault list idea                 # List all ideas (names only)
+ovault list objective            # List all objectives (tasks, milestones, etc.)
+ovault list objective/task       # List only tasks
 ovault list objective/milestone  # List only milestones
+
+# List output options
+ovault list --paths idea                       # Show vault-relative paths
+ovault list --fields=status,priority idea      # Show selected frontmatter fields in a table
+ovault list --paths --fields=status objective  # Combine paths + fields
 
 # Help
 ovault help
