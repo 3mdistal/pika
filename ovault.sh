@@ -79,26 +79,26 @@ create_new() {
     local type_name="$1"
 
     # Detect legacy flat schemas and fail loudly
-    if jq -e '.types | keys[] | select(.=="task")' "$SCHEMA_FILE" >/dev/null; then
+    if jq -e '.types | keys[] | select(.=="task")' "$SCHEMA_FILE" > /dev/null; then
         echo "${RED}Schema format is legacy (flat types). Migrate schema.json to nested form first.${NC}"
         exit 1
     fi
-    
+
     # If no type specified, prompt for top-level family
     if [[ -z "$type_name" ]]; then
         local families=()
         while IFS= read -r line; do
             families+=("$line")
         done < <(get_type_families)
-        
+
         type_name=$(prompt_selection "What would you like to create?" "${families[@]}")
-        
+
         if [[ -z "$type_name" ]]; then
             echo "${RED}No type selected. Exiting.${NC}"
             exit 1
         fi
     fi
-    
+
     local path_parts=$(printf '["types","%s"]' "$type_name")
     local current="$type_name"
 
@@ -118,45 +118,45 @@ create_new() {
         path_parts=$(append_sub_path "$path_parts" "$choice")
         current="$choice"
     done
-    
+
     local type_def=$(get_type_def_by_path "$path_parts")
-    
+
     if [[ "$type_def" == "null" ]]; then
         echo "${RED}Unknown type selection.${NC}"
         exit 1
     fi
-    
+
     echo "\n${GREEN}=== New ${type_name} ===${NC}"
-    
+
     # Get output directory
     local output_dir=$(echo "$type_def" | jq -r '.output_dir')
     local full_output_dir="$VAULT_DIR/$output_dir"
-    
+
     # Prompt for name
     local name_field=$(echo "$type_def" | jq -r '.name_field // "Name"')
     local item_name=$(prompt_required "$name_field")
-    
+
     # Build frontmatter
     local frontmatter="---\n"
     local frontmatter_def=$(echo "$type_def" | jq -c '.frontmatter')
-    
+
     # Read frontmatter order into array
     local frontmatter_order=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && frontmatter_order+=("$line")
     done < <(echo "$type_def" | jq -r '.frontmatter_order[]? // empty')
-    
+
     # If no order specified, use keys
     if [[ ${#frontmatter_order[@]} -eq 0 ]]; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && frontmatter_order+=("$line")
         done < <(echo "$frontmatter_def" | jq -r 'keys[]')
     fi
-    
+
     for field in "${frontmatter_order[@]}"; do
         local field_def=$(echo "$frontmatter_def" | jq -c ".[\"$field\"]")
         local value=""
-        
+
         # Check for static value
         local static_value=$(echo "$field_def" | jq -r '.value // empty')
         if [[ -n "$static_value" ]]; then
@@ -178,7 +178,7 @@ create_new() {
             local default=$(echo "$field_def" | jq -r '.default // empty')
             local format=$(echo "$field_def" | jq -r '.format // "plain"')
             local required=$(echo "$field_def" | jq -r '.required // false')
-            
+
             case "$prompt_type" in
                 select)
                     local enum_name=$(echo "$field_def" | jq -r '.enum')
@@ -186,7 +186,7 @@ create_new() {
                     while IFS= read -r line; do
                         options+=("$line")
                     done < <(get_enum "$enum_name")
-                    
+
                     value=$(prompt_selection "Select $field:" "${options[@]}")
                     value="${value:-$default}"
                     ;;
@@ -196,7 +196,7 @@ create_new() {
                     while IFS= read -r line; do
                         [[ -n "$line" ]] && options+=("$line")
                     done < <(query_dynamic_source "$source")
-                    
+
                     if [[ ${#options[@]} -gt 0 ]]; then
                         local selected=$(prompt_selection "Select $field:" "${options[@]}")
                         value=$(format_value "$selected" "$format")
@@ -217,23 +217,23 @@ create_new() {
                     ;;
             esac
         fi
-        
+
         frontmatter+="$field: $value\n"
     done
-    
+
     frontmatter+="---"
-    
+
     # Build body sections
     local body_sections=$(echo "$type_def" | jq -c '.body_sections // []')
     local body=""
     if [[ $(echo "$body_sections" | jq 'length') -gt 0 ]]; then
         body=$(prompt_body_sections "$body_sections")
     fi
-    
+
     # Create file
     mkdir -p "$full_output_dir"
     local file_path="$full_output_dir/$item_name.md"
-    
+
     if [[ -f "$file_path" ]]; then
         echo "\n${YELLOW}Warning: File already exists: $file_path${NC}"
         read -r "overwrite?Overwrite? (y/N): "
@@ -242,87 +242,72 @@ create_new() {
             exit 1
         fi
     fi
-    
+
     printf '%b\n%s' "$frontmatter" "$body" > "$file_path"
-    
+
     echo "\n${GREEN}✓ Created: $file_path${NC}"
 }
 
 # --- Edit mode ---
 edit_existing() {
     local file_path="$1"
-    
+
     # Resolve relative path
     if [[ ! "$file_path" = /* ]]; then
         file_path="$VAULT_DIR/$file_path"
     fi
-    
+
     if [[ ! -f "$file_path" ]]; then
         echo "${RED}File not found: $file_path${NC}"
         exit 1
     fi
-    
+
     echo "\n${GREEN}=== Editing: $(basename "$file_path") ===${NC}"
-    
+
     # Extract current frontmatter
     local frontmatter=$(awk '/^---$/{p=1; next} p && /^---$/{exit} p{print}' "$file_path")
-    
-    # Detect type from frontmatter
-    local file_type=$(echo "$frontmatter" | awk -F': ' '$1=="type"{print $2}')
-    local file_subtype=""
-    
-    case "$file_type" in
-        objective)
-            file_subtype=$(echo "$frontmatter" | awk -F': ' '$1=="objective-type"{print $2}')
-            ;;
-        entity)
-            file_subtype=$(echo "$frontmatter" | awk -F': ' '$1=="entity-type"{print $2}')
-            ;;
-        *)
-            file_subtype="$file_type"
-            ;;
-    esac
-    
+
+    # Resolve type path from frontmatter
     local path_parts=$(resolve_path_from_frontmatter "$frontmatter")
     local type_def=""
     if [[ -n "$path_parts" ]]; then
         type_def=$(get_type_def_by_path "$path_parts")
     fi
-    
+
     if [[ -z "$type_def" || "$type_def" == "null" ]]; then
         echo "${YELLOW}Warning: Unknown type path, showing raw frontmatter edit${NC}"
         echo "Current frontmatter:"
         echo "$frontmatter"
         return
     fi
-    
+
     echo "Type path: ${CYAN}$path_parts${NC}\n"
-    
+
     # Get body content (everything after second ---)
     local body=$(awk 'BEGIN{p=0; c=0} /^---$/{c++; if(c==2){p=1; next}} p{print}' "$file_path")
-    
+
     # Edit frontmatter fields
     local new_frontmatter="---\n"
     local frontmatter_def=$(echo "$type_def" | jq -c '.frontmatter')
-    
+
     # Read frontmatter order into array
     local frontmatter_order=()
     while IFS= read -r line; do
         [[ -n "$line" ]] && frontmatter_order+=("$line")
     done < <(echo "$type_def" | jq -r '.frontmatter_order[]? // empty')
-    
+
     # If no order specified, use keys
     if [[ ${#frontmatter_order[@]} -eq 0 ]]; then
         while IFS= read -r line; do
             [[ -n "$line" ]] && frontmatter_order+=("$line")
         done < <(echo "$frontmatter_def" | jq -r 'keys[]')
     fi
-    
+
     for field in "${frontmatter_order[@]}"; do
         local field_def=$(echo "$frontmatter_def" | jq -c ".[\"$field\"]")
         local current_value=$(echo "$frontmatter" | awk -F': ' -v f="$field" '$1==f{$1=""; print substr($0,2)}')
         local value=""
-        
+
         # Check for static value (don't prompt, keep current or use static)
         local static_value=$(echo "$field_def" | jq -r '.value // empty')
         if [[ -n "$static_value" ]]; then
@@ -347,9 +332,9 @@ edit_existing() {
             local prompt_type=$(echo "$field_def" | jq -r '.prompt // empty')
             local label=$(echo "$field_def" | jq -r '.label // empty')
             local format=$(echo "$field_def" | jq -r '.format // "plain"')
-            
+
             echo "Current $field: ${YELLOW}${current_value:-<empty>}${NC}"
-            
+
             case "$prompt_type" in
                 select)
                     local enum_name=$(echo "$field_def" | jq -r '.enum')
@@ -357,7 +342,7 @@ edit_existing() {
                     while IFS= read -r line; do
                         options+=("$line")
                     done < <(get_enum "$enum_name")
-                    
+
                     local selected=$(prompt_selection "New $field (or Enter to keep):" "${options[@]}")
                     value="${selected:-$current_value}"
                     ;;
@@ -367,7 +352,7 @@ edit_existing() {
                     while IFS= read -r line; do
                         [[ -n "$line" ]] && options+=("$line")
                     done < <(query_dynamic_source "$source")
-                    
+
                     if [[ ${#options[@]} -gt 0 ]]; then
                         local selected=$(prompt_selection "New $field (or Enter to keep):" "${options[@]}")
                         if [[ -n "$selected" ]]; then
@@ -387,27 +372,27 @@ edit_existing() {
                     ;;
             esac
         fi
-        
+
         new_frontmatter+="$field: $value\n"
     done
-    
+
     new_frontmatter+="---"
-    
+
     # Check for missing sections in body
     local body_sections=$(echo "$type_def" | jq -c '.body_sections // []')
     local section_count=$(echo "$body_sections" | jq 'length')
-    
+
     if [[ $section_count -gt 0 ]]; then
         echo "\n${CYAN}Check for missing sections?${NC}"
         read -r "add_sections?(y/N): "
-        
+
         if [[ "$add_sections" == "y" || "$add_sections" == "Y" ]]; then
-            for ((i=0; i<section_count; i++)); do
+            for ((i = 0; i < section_count; i++)); do
                 local section=$(echo "$body_sections" | jq -c ".[$i]")
                 local title=$(echo "$section" | jq -r '.title')
                 local level=$(echo "$section" | jq -r '.level // 2')
                 local prefix=$(heading_prefix "$level")
-                
+
                 # Check if section exists in body
                 if ! echo "$body" | grep -q "^$prefix $title"; then
                     echo "${YELLOW}Missing section: $title${NC}"
@@ -420,10 +405,10 @@ edit_existing() {
             done
         fi
     fi
-    
+
     # Write updated file
     printf '%b\n%s' "$new_frontmatter" "$body" > "$file_path"
-    
+
     echo "\n${GREEN}✓ Updated: $file_path${NC}"
 }
 
@@ -431,9 +416,11 @@ edit_existing() {
 list_type() {
     local show_paths=false
     local fields=""
-    
-    # Parse flags
-    while [[ "${1:-}" == --* ]]; do
+    local filters=()
+    local type_path=""
+
+    # Parse flags and arguments
+    while [[ $# -gt 0 ]]; do
         case "$1" in
             --paths)
                 show_paths=true
@@ -443,28 +430,79 @@ list_type() {
                 fields="${1#--fields=}"
                 shift
                 ;;
-            *)
+            --*!=*)
+                # Negation filter: --field!=value
+                local filter_arg="${1#--}"
+                local field_name="${filter_arg%%!=*}"
+                local filter_value="${filter_arg#*!=}"
+                filters+=("${field_name}:neq:${filter_value}")
+                shift
+                ;;
+            --*=*)
+                # Equality filter: --field=value
+                local filter_arg="${1#--}"
+                local field_name="${filter_arg%%=*}"
+                local filter_value="${filter_arg#*=}"
+                filters+=("${field_name}:eq:${filter_value}")
+                shift
+                ;;
+            --*)
                 echo "${RED}Unknown option: $1${NC}"
                 exit 1
                 ;;
+            *)
+                # Positional argument (type path)
+                if [[ -z "$type_path" ]]; then
+                    type_path="$1"
+                else
+                    echo "${RED}Unexpected argument: $1${NC}"
+                    exit 1
+                fi
+                shift
+                ;;
         esac
     done
-    
-    local type_path="$1"
-    
+
     if [[ -z "$type_path" ]]; then
-        echo "${RED}Usage: ovault list [options] <type>[/<subtype>]${NC}"
+        echo "${RED}Usage: ovault list [options] <type>[/<subtype>] [filters...]${NC}"
         echo ""
         echo "${GREEN}Options:${NC}"
         echo "  --paths              Show file paths instead of names"
         echo "  --fields=f1,f2,...   Show frontmatter fields in a table"
         echo ""
+        echo "${GREEN}Filters:${NC}"
+        echo "  --field=value        Include items where field equals value"
+        echo "  --field=val1,val2    Include items where field equals any value (OR)"
+        echo "  --field!=value       Exclude items where field equals value"
+        echo "  --field!=val1,val2   Exclude items where field equals any value"
+        echo "  --field=             Include items where field is missing/empty"
+        echo "  --field!=            Include items where field exists (has a value)"
+        echo ""
         echo "${GREEN}Available types:${NC}"
         get_type_families | sed 's/^/  /'
         exit 1
     fi
-    
-    list_objects_by_type "$type_path" "$show_paths" "$fields"
+
+    # Validate filters against schema
+    for filter in "${filters[@]}"; do
+        local field="${filter%%:*}"
+        local rest="${filter#*:}"
+        local operator="${rest%%:*}"
+        local values="${rest#*:}"
+        [[ "$values" == "$operator" ]] && values=""
+
+        # Validate field name
+        if ! validate_field_for_type "$type_path" "$field"; then
+            exit 1
+        fi
+
+        # Validate filter values (for enum fields)
+        if ! validate_filter_values "$type_path" "$field" "$values"; then
+            exit 1
+        fi
+    done
+
+    list_objects_by_type "$type_path" "$show_paths" "$fields" "${filters[@]}"
 }
 
 # --- Help ---
@@ -474,11 +512,22 @@ show_help() {
     echo "${GREEN}Usage:${NC}"
     echo "  ovault new [type]              Create a new object (interactive if no type)"
     echo "  ovault edit <file>             Edit an existing file's frontmatter"
-  echo "  ovault list [options] <type>   List objects of a given type"
+    echo "  ovault list [options] <type>   List objects of a given type"
     echo "  ovault help                    Show this help"
     echo ""
     echo "${GREEN}Available types:${NC}"
     get_type_families | sed 's/^/  /'
+    echo ""
+    echo "${GREEN}List Options:${NC}"
+    echo "  --paths              Show file paths instead of names"
+    echo "  --fields=f1,f2,...   Show frontmatter fields in a table"
+    echo ""
+    echo "${GREEN}List Filters:${NC}"
+    echo "  --field=value        Include items where field equals value"
+    echo "  --field=val1,val2    Include items where field equals any value (OR)"
+    echo "  --field!=value       Exclude items where field equals value"
+    echo "  --field=             Include items where field is missing/empty"
+    echo "  --field!=            Include items where field exists (has a value)"
     echo ""
     echo "${GREEN}Examples:${NC}"
     echo "  ovault new              # Interactive type selection"
@@ -490,6 +539,9 @@ show_help() {
     echo "  ovault list objective/task  # List only tasks"
     echo "  ovault list --paths idea    # Show file paths"
     echo "  ovault list --fields=status,priority idea  # Show as table"
+    echo "  ovault list objective/task --status=in-flight  # Filter by status"
+    echo "  ovault list idea --status!=settled  # Exclude settled ideas"
+    echo "  ovault list objective --deadline=   # Find items missing deadline"
 }
 
 # --- Main ---
@@ -508,7 +560,7 @@ case "${1:-}" in
         shift
         list_type "$@"
         ;;
-    help|-h|--help)
+    help | -h | --help)
         show_help
         ;;
     "")
