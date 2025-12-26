@@ -14,7 +14,19 @@ import { resolveVaultDir, listFilesInDir, getOutputDir } from '../lib/vault.js';
 import { parseFilters, matchesAllFilters, validateFilters } from '../lib/query.js';
 import { matchesExpression, type EvalContext } from '../lib/expression.js';
 import { printError } from '../lib/prompt.js';
+import {
+  printJson,
+  jsonError,
+  ExitCodes,
+} from '../lib/output.js';
 import type { Schema } from '../types/schema.js';
+
+interface ListCommandOptions {
+  paths?: boolean;
+  fields?: string;
+  where?: string[];
+  output?: string;
+}
 
 export const listCommand = new Command('list')
   .description('List notes of a given type with optional filtering')
@@ -36,6 +48,7 @@ Examples:
   ovault list objective/task --status!=settled
   ovault list idea --fields=status,priority
   ovault list task --where "status == 'done' && !isEmpty(tags)"
+  ovault list task --output json
 
 Note: In zsh, use single quotes for expressions with '!' to avoid history expansion:
   ovault list task --where '!isEmpty(deadline)'`)
@@ -43,14 +56,21 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
   .option('--paths', 'Show file paths instead of names')
   .option('--fields <fields>', 'Show frontmatter fields in a table (comma-separated)')
   .option('-w, --where <expression...>', 'Filter with expression (multiple are ANDed)')
+  .option('-o, --output <format>', 'Output format: text (default) or json')
   .allowUnknownOption(true)
-  .action(async (typePath: string | undefined, options: { paths?: boolean; fields?: string; where?: string[] }, cmd: Command) => {
+  .action(async (typePath: string | undefined, options: ListCommandOptions, cmd: Command) => {
+    const jsonMode = options.output === 'json';
+
     try {
       const parentOpts = cmd.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
       const schema = await loadSchema(vaultDir);
 
       if (!typePath) {
+        if (jsonMode) {
+          printJson(jsonError('Type path is required'));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
         showListUsage(schema);
         process.exit(1);
       }
@@ -58,7 +78,12 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
       // Validate type exists
       const typeDef = getTypeDefByPath(schema, typePath);
       if (!typeDef) {
-        printError(`Unknown type: ${typePath}`);
+        const error = `Unknown type: ${typePath}`;
+        if (jsonMode) {
+          printJson(jsonError(error));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        printError(error);
         process.exit(1);
       }
 
@@ -70,6 +95,10 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
       if (filters.length > 0) {
         const validation = validateFilters(schema, typePath, filters);
         if (!validation.valid) {
+          if (jsonMode) {
+            printJson(jsonError(validation.errors.join('; ')));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
           for (const error of validation.errors) {
             printError(error);
           }
@@ -82,9 +111,15 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
         fields: options.fields?.split(',').map(f => f.trim()),
         filters,
         whereExpressions: options.where ?? [],
+        jsonMode,
       });
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(message));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(message);
       process.exit(1);
     }
   });
@@ -94,6 +129,7 @@ interface ListOptions {
   fields?: string[];
   filters: { field: string; operator: 'eq' | 'neq'; values: string[] }[];
   whereExpressions: string[];
+  jsonMode: boolean;
 }
 
 /**
@@ -106,6 +142,7 @@ function showListUsage(schema: Schema): void {
   console.log('  --paths              Show file paths instead of names');
   console.log('  --fields=f1,f2,...   Show frontmatter fields in a table');
   console.log('  --where "expr"       Filter with expression (can be repeated)');
+  console.log('  --output json        Output as JSON');
   console.log('');
   console.log('Expression examples:');
   console.log('  --where "status == \'done\'"');
@@ -156,7 +193,9 @@ async function listObjects(
           try {
             return matchesExpression(expr, context);
           } catch (e) {
-            printError(`Expression error in "${expr}": ${(e as Error).message}`);
+            if (!options.jsonMode) {
+              printError(`Expression error in "${expr}": ${(e as Error).message}`);
+            }
             return false;
           }
         });
@@ -176,6 +215,18 @@ async function listObjects(
     return nameA.localeCompare(nameB);
   });
 
+  // JSON output mode
+  if (options.jsonMode) {
+    const jsonOutput = filteredFiles.map(({ path, frontmatter }) => ({
+      _path: relative(vaultDir, path),
+      _name: basename(path, '.md'),
+      ...frontmatter,
+    }));
+    console.log(JSON.stringify(jsonOutput, null, 2));
+    return;
+  }
+
+  // Text output mode
   if (filteredFiles.length === 0) {
     return;
   }

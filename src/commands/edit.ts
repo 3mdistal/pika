@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { join, isAbsolute } from 'path';
+import { join, isAbsolute, relative } from 'path';
 import {
   loadSchema,
   getTypeDefByPath,
@@ -19,17 +19,43 @@ import {
   printInfo,
   printWarning,
 } from '../lib/prompt.js';
+import {
+  validateFrontmatter,
+} from '../lib/validation.js';
+import {
+  printJson,
+  jsonSuccess,
+  jsonError,
+  ExitCodes,
+} from '../lib/output.js';
 import type { Schema, Field, BodySection } from '../types/schema.js';
+
+interface EditCommandOptions {
+  open?: boolean;
+  json?: string;
+}
 
 export const editCommand = new Command('edit')
   .description('Edit an existing note\'s frontmatter interactively')
   .argument('<file>', 'Path to the file to edit (relative or absolute)')
   .option('--open', 'Open the note in Obsidian after editing')
+  .option('--json <frontmatter>', 'Update note non-interactively with JSON (patch/merge semantics)')
   .addHelpText('after', `
 Examples:
   ovault edit Ideas/My\\ Idea.md
-  ovault edit "Objectives/Tasks/My Task.md" --open`)
-  .action(async (filePath: string, options: { open?: boolean }, cmd: Command) => {
+  ovault edit "Objectives/Tasks/My Task.md" --open
+
+Non-interactive (JSON) mode:
+  ovault edit "Tasks/Fix bug.md" --json '{"status": "done"}'
+  ovault edit Ideas/Idea.md --json '{"priority": "high", "tags": ["urgent"]}'
+  
+JSON mode uses patch/merge semantics:
+  - Only fields present in JSON are updated
+  - Existing fields not in JSON are preserved
+  - To clear a field, pass null: '{"deadline": null}'`)
+  .action(async (filePath: string, options: EditCommandOptions, cmd: Command) => {
+    const jsonMode = options.json !== undefined;
+
     try {
       const parentOpts = cmd.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
@@ -39,10 +65,31 @@ Examples:
       const resolvedPath = isAbsolute(filePath) ? filePath : join(vaultDir, filePath);
 
       if (!(await isFile(resolvedPath))) {
-        printError(`File not found: ${resolvedPath}`);
+        const error = `File not found: ${resolvedPath}`;
+        if (jsonMode) {
+          printJson(jsonError(error, { code: ExitCodes.IO_ERROR }));
+          process.exit(ExitCodes.IO_ERROR);
+        }
+        printError(error);
         process.exit(1);
       }
 
+      if (jsonMode) {
+        const result = await editNoteFromJson(schema, vaultDir, resolvedPath, options.json!);
+        printJson(jsonSuccess({
+          path: relative(vaultDir, resolvedPath),
+          updated: result.updatedFields,
+        }));
+
+        // Open in Obsidian if requested
+        if (options.open) {
+          const { openInObsidian } = await import('./open.js');
+          await openInObsidian(vaultDir, resolvedPath);
+        }
+        return;
+      }
+
+      // Interactive mode
       await editNote(schema, vaultDir, resolvedPath);
 
       // Open in Obsidian if requested
@@ -51,13 +98,110 @@ Examples:
         await openInObsidian(vaultDir, resolvedPath);
       }
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(message));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(message);
       process.exit(1);
     }
   });
 
 /**
- * Edit an existing note's frontmatter.
+ * Edit a note from JSON input (non-interactive mode with merge semantics).
+ */
+async function editNoteFromJson(
+  schema: Schema,
+  _vaultDir: string,
+  filePath: string,
+  jsonInput: string
+): Promise<{ updatedFields: string[] }> {
+  // Parse JSON input
+  let patchData: Record<string, unknown>;
+  try {
+    patchData = JSON.parse(jsonInput) as Record<string, unknown>;
+  } catch (e) {
+    const error = `Invalid JSON: ${(e as Error).message}`;
+    printJson(jsonError(error));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Parse existing note
+  const { frontmatter, body } = await parseNote(filePath);
+
+  // Resolve type path from existing frontmatter
+  const typePath = resolveTypePathFromFrontmatter(schema, frontmatter);
+  if (!typePath) {
+    printJson(jsonError('Could not determine note type from frontmatter'));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  const typeDef = getTypeDefByPath(schema, typePath);
+  if (!typeDef) {
+    printJson(jsonError(`Unknown type path: ${typePath}`));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Merge patch data into existing frontmatter
+  const mergedFrontmatter = mergeFrontmatter(frontmatter, patchData);
+  const updatedFields = Object.keys(patchData).filter(k => patchData[k] !== undefined);
+
+  // Validate merged result
+  const validation = validateFrontmatter(schema, typePath, mergedFrontmatter);
+  if (!validation.valid) {
+    printJson({
+      success: false,
+      error: 'Validation failed',
+      errors: validation.errors.map(e => ({
+        field: e.field,
+        value: e.value,
+        message: e.message,
+        expected: e.expected,
+        suggestion: e.suggestion,
+        currentValue: frontmatter[e.field],
+      })),
+    });
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Get field order
+  const fieldOrder = getFrontmatterOrder(typeDef);
+  const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(mergedFrontmatter);
+
+  // Write updated note
+  await writeNote(filePath, mergedFrontmatter, body, orderedFields);
+
+  return { updatedFields };
+}
+
+/**
+ * Merge patch data into existing frontmatter.
+ * - Fields in patch overwrite existing fields
+ * - null values remove the field
+ * - Arrays are replaced, not merged
+ */
+function mergeFrontmatter(
+  existing: Record<string, unknown>,
+  patch: Record<string, unknown>
+): Record<string, unknown> {
+  const result = { ...existing };
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) {
+      // Remove field
+      delete result[key];
+    } else {
+      // Overwrite field
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Edit an existing note's frontmatter (interactive mode).
  */
 async function editNote(
   schema: Schema,
