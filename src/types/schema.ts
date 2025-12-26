@@ -54,7 +54,7 @@ export const SubtypeSchema: z.ZodType<Subtype> = z.lazy(() =>
 
 // Type definition
 export const TypeSchema = z.object({
-  output_dir: z.string(),
+  output_dir: z.string().optional(), // Optional for parent types with subtypes
   dir_mode: z.enum(['pooled', 'instance-grouped']).optional().default('pooled'),
   name_field: z.string().optional(),
   frontmatter: z.record(FieldSchema).optional(),
@@ -65,7 +65,7 @@ export const TypeSchema = z.object({
 
 // Root schema
 export const OvaultSchema = z.object({
-  version: z.number(),
+  version: z.number().optional().default(1),
   shared_fields: z.record(FieldSchema).optional(),
   enums: z.record(z.array(z.string())).optional(),
   dynamic_sources: z.record(DynamicSourceSchema).optional(),
