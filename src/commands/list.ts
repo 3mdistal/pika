@@ -15,7 +15,19 @@ import { printError } from '../lib/prompt.js';
 import type { Schema } from '../types/schema.js';
 
 export const listCommand = new Command('list')
-  .description('List notes of a given type')
+  .description(`List notes of a given type
+
+Filters:
+  --field=value        Include where field equals value
+  --field=a,b          Include where field equals a OR b
+  --field!=value       Exclude where field equals value
+  --field=             Include where field is empty/missing
+  --field!=            Include where field exists
+
+Examples:
+  ovault list idea --status=raw
+  ovault list objective/task --status!=settled
+  ovault list idea --fields=status,priority`)
   .argument('[type]', 'Type path (e.g., idea, objective/task)')
   .option('--paths', 'Show file paths instead of names')
   .option('--fields <fields>', 'Show frontmatter fields in a table (comma-separated)')
