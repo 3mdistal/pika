@@ -7,10 +7,21 @@ import {
   hasSubtypes,
   getSubtypeKeys,
   getFieldsForType,
+  getEnumValues,
 } from '../lib/schema.js';
 import { resolveVaultDir } from '../lib/vault.js';
 import { printError, printSuccess } from '../lib/prompt.js';
-import type { Schema, Type, TypeDef, Field } from '../types/schema.js';
+import {
+  printJson,
+  jsonSuccess,
+  jsonError,
+  ExitCodes,
+} from '../lib/output.js';
+import type { Schema, Type, TypeDef, Field, BodySection } from '../types/schema.js';
+
+interface SchemaShowOptions {
+  output?: string;
+}
 
 export const schemaCommand = new Command('schema')
   .description('Schema introspection commands')
@@ -19,25 +30,42 @@ Examples:
   ovault schema show              # Show all types
   ovault schema show objective    # Show objective type details
   ovault schema show objective/task  # Show task subtype details
+  ovault schema show task --output json  # Show as JSON for AI/scripting
   ovault schema validate          # Validate schema structure`);
 
 // schema show
 schemaCommand
   .command('show [type]')
   .description('Show schema structure (all types or specific type)')
-  .action(async (typePath: string | undefined, _options: unknown, cmd: Command) => {
+  .option('-o, --output <format>', 'Output format: text (default) or json')
+  .action(async (typePath: string | undefined, options: SchemaShowOptions, cmd: Command) => {
+    const jsonMode = options.output === 'json';
+
     try {
       const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
       const schema = await loadSchema(vaultDir);
 
-      if (typePath) {
-        showTypeDetails(schema, typePath);
+      if (jsonMode) {
+        if (typePath) {
+          outputTypeDetailsJson(schema, typePath);
+        } else {
+          outputSchemaJson(schema);
+        }
       } else {
-        showSchemaTree(schema);
+        if (typePath) {
+          showTypeDetails(schema, typePath);
+        } else {
+          showSchemaTree(schema);
+        }
       }
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(message));
+        process.exit(ExitCodes.SCHEMA_ERROR);
+      }
+      printError(message);
       process.exit(1);
     }
   });
@@ -46,20 +74,178 @@ schemaCommand
 schemaCommand
   .command('validate')
   .description('Validate schema structure')
-  .action(async (_options: unknown, cmd: Command) => {
+  .option('-o, --output <format>', 'Output format: text (default) or json')
+  .action(async (options: SchemaShowOptions, cmd: Command) => {
+    const jsonMode = options.output === 'json';
+
     try {
       const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
 
       // Loading the schema validates it via Zod
       await loadSchema(vaultDir);
-      printSuccess('✓ Schema is valid');
+
+      if (jsonMode) {
+        printJson(jsonSuccess({ message: 'Schema is valid' }));
+      } else {
+        printSuccess('Schema is valid');
+      }
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(`Schema validation failed: ${message}`));
+        process.exit(ExitCodes.SCHEMA_ERROR);
+      }
       printError('Schema validation failed:');
-      printError(err instanceof Error ? err.message : String(err));
+      printError(message);
       process.exit(1);
     }
   });
+
+/**
+ * Output schema as JSON for AI/scripting usage.
+ */
+function outputSchemaJson(schema: Schema): void {
+  const output: Record<string, unknown> = {
+    version: schema.version ?? 1,
+    enums: schema.enums ?? {},
+    shared_fields: schema.shared_fields 
+      ? Object.fromEntries(
+          Object.entries(schema.shared_fields).map(([name, field]) => [
+            name,
+            formatFieldForJson(schema, field),
+          ])
+        )
+      : {},
+    types: Object.fromEntries(
+      getTypeFamilies(schema).map(family => [
+        family,
+        formatTypeForJson(schema, family, schema.types[family]!),
+      ])
+    ),
+  };
+
+  console.log(JSON.stringify(output, null, 2));
+}
+
+/**
+ * Output specific type details as JSON.
+ */
+function outputTypeDetailsJson(schema: Schema, typePath: string): void {
+  const typeDef = getTypeDefByPath(schema, typePath);
+  if (!typeDef) {
+    printJson(jsonError(`Unknown type: ${typePath}`));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  const fields = getFieldsForType(schema, typePath);
+  const typeAsType = typeDef as Type;
+
+  const output: Record<string, unknown> = {
+    type_path: typePath,
+    output_dir: typeDef.output_dir,
+    dir_mode: typeAsType.dir_mode,
+    name_field: typeDef.name_field ?? 'Name',
+    filename: (typeDef as { filename?: string }).filename,
+    fields: Object.fromEntries(
+      Object.entries(fields).map(([name, field]) => [
+        name,
+        formatFieldForJson(schema, field),
+      ])
+    ),
+    subtypes: hasSubtypes(typeDef) ? getSubtypeKeys(typeDef) : undefined,
+    body_sections: typeDef.body_sections 
+      ? formatBodySectionsForJson(typeDef.body_sections)
+      : undefined,
+  };
+
+  // Remove undefined values
+  const cleaned = Object.fromEntries(
+    Object.entries(output).filter(([_, v]) => v !== undefined)
+  );
+
+  console.log(JSON.stringify(cleaned, null, 2));
+}
+
+/**
+ * Format a type definition for JSON output.
+ */
+function formatTypeForJson(
+  schema: Schema,
+  typePath: string,
+  typeDef: TypeDef
+): Record<string, unknown> {
+  const typeAsType = typeDef as Type;
+  const result: Record<string, unknown> = {
+    output_dir: typeDef.output_dir,
+    dir_mode: typeAsType.dir_mode,
+    name_field: typeDef.name_field,
+  };
+
+  // Add subtypes if present
+  if (hasSubtypes(typeDef)) {
+    result.subtypes = Object.fromEntries(
+      getSubtypeKeys(typeDef).map(subtype => [
+        subtype,
+        formatTypeForJson(schema, `${typePath}/${subtype}`, typeDef.subtypes![subtype]!),
+      ])
+    );
+  }
+
+  return result;
+}
+
+/**
+ * Format a field for JSON output with resolved enum values.
+ */
+function formatFieldForJson(schema: Schema, field: Field): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  // Determine type
+  if (field.value !== undefined) {
+    result.type = 'static';
+    result.value = field.value;
+  } else if (field.prompt) {
+    result.type = field.prompt;
+  } else {
+    result.type = 'auto';
+  }
+
+  // Add enum values if applicable
+  if (field.enum) {
+    result.enum = field.enum;
+    result.values = getEnumValues(schema, field.enum);
+  }
+
+  // Add other properties
+  if (field.required) result.required = true;
+  if (field.default !== undefined) result.default = field.default;
+  if (field.label) result.label = field.label;
+  if (field.source) result.source = field.source;
+  if (field.format) result.format = field.format;
+  if (field.list_format) result.list_format = field.list_format;
+
+  return result;
+}
+
+/**
+ * Format body sections for JSON output.
+ */
+function formatBodySectionsForJson(sections: BodySection[]): unknown[] {
+  return sections.map(section => {
+    const result: Record<string, unknown> = {
+      title: section.title,
+      level: section.level ?? 2,
+    };
+    if (section.content_type) result.content_type = section.content_type;
+    if (section.prompt) result.prompt = section.prompt;
+    if (section.prompt_label) result.prompt_label = section.prompt_label;
+    if (section.children && section.children.length > 0) {
+      result.children = formatBodySectionsForJson(section.children);
+    }
+    return result;
+  });
+}
 
 /**
  * Show a tree view of all types in the schema.
@@ -115,7 +301,7 @@ function printTypeTree(
     label += chalk.gray(' [instance-grouped]');
   }
   if (outputDir) {
-    label += chalk.gray(` → ${outputDir}`);
+    label += chalk.gray(` -> ${outputDir}`);
   }
 
   console.log(`${indent}${label}`);

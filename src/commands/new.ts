@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { existsSync } from 'fs';
 import {
   loadSchema,
@@ -12,7 +12,7 @@ import {
   getFrontmatterOrder,
   getEnumValues,
 } from '../lib/schema.js';
-import { writeNote, generateBodyWithContent } from '../lib/frontmatter.js';
+import { writeNote, generateBodyWithContent, generateBodySections } from '../lib/frontmatter.js';
 import {
   resolveVaultDir,
   queryDynamicSource,
@@ -39,12 +39,30 @@ import {
   printInfo,
   printWarning,
 } from '../lib/prompt.js';
+import {
+  validateFrontmatter,
+  applyDefaults,
+} from '../lib/validation.js';
+import {
+  printJson,
+  jsonSuccess,
+  jsonError,
+  ExitCodes,
+} from '../lib/output.js';
 import type { Schema, TypeDef, Field, BodySection } from '../types/schema.js';
+
+interface NewCommandOptions {
+  open?: boolean;
+  json?: string;
+  instance?: string;
+}
 
 export const newCommand = new Command('new')
   .description('Create a new note (interactive type navigation if type omitted)')
   .argument('[type]', 'Type of note to create (e.g., idea, objective/task)')
   .option('--open', 'Open the note in Obsidian after creation')
+  .option('--json <frontmatter>', 'Create note non-interactively with JSON frontmatter')
+  .option('--instance <name>', 'Parent instance name (for instance-grouped subtypes)')
   .addHelpText('after', `
 Examples:
   ovault new                    # Interactive type selection
@@ -52,15 +70,48 @@ Examples:
   ovault new objective/task     # Create a task
   ovault new draft --open       # Create and open in Obsidian
 
+Non-interactive (JSON) mode:
+  ovault new idea --json '{"Name": "My Idea", "status": "raw"}'
+  ovault new objective/task --json '{"Name": "Fix bug", "status": "in-progress"}'
+  ovault new draft/version --instance "My Project" --json '{"Name": "v1"}'
+
 For instance-grouped types (like drafts), you'll be prompted to select
 or create a parent instance folder.`)
-  .action(async (typePath: string | undefined, options: { open?: boolean }, cmd: Command) => {
+  .action(async (typePath: string | undefined, options: NewCommandOptions, cmd: Command) => {
+    const jsonMode = options.json !== undefined;
+    
     try {
       const parentOpts = cmd.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
       const schema = await loadSchema(vaultDir);
 
-      // Resolve full type path through interactive navigation
+      // JSON mode: non-interactive creation
+      if (jsonMode) {
+        if (!typePath) {
+          const error = 'Type path is required in JSON mode';
+          printJson(jsonError(error));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+
+        const filePath = await createNoteFromJson(
+          schema,
+          vaultDir,
+          typePath,
+          options.json!,
+          options.instance
+        );
+        
+        printJson(jsonSuccess({ path: relative(vaultDir, filePath) }));
+        
+        // Open in Obsidian if requested
+        if (options.open && filePath) {
+          const { openInObsidian } = await import('./open.js');
+          await openInObsidian(vaultDir, filePath);
+        }
+        return;
+      }
+
+      // Interactive mode: original behavior
       const resolvedPath = await resolveTypePath(schema, typePath);
       if (!resolvedPath) {
         printError('No type selected. Exiting.');
@@ -81,10 +132,252 @@ or create a parent instance folder.`)
         await openInObsidian(vaultDir, filePath);
       }
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(message));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(message);
       process.exit(1);
     }
   });
+
+/**
+ * Create a note from JSON input (non-interactive mode).
+ */
+async function createNoteFromJson(
+  schema: Schema,
+  vaultDir: string,
+  typePath: string,
+  jsonInput: string,
+  instanceName?: string
+): Promise<string> {
+  // Parse JSON input
+  let inputData: Record<string, unknown>;
+  try {
+    inputData = JSON.parse(jsonInput) as Record<string, unknown>;
+  } catch (e) {
+    const error = `Invalid JSON: ${(e as Error).message}`;
+    printJson(jsonError(error));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Get type definition
+  const typeDef = getTypeDefByPath(schema, typePath);
+  if (!typeDef) {
+    printJson(jsonError(`Unknown type: ${typePath}`));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Validate and apply defaults
+  const validation = validateFrontmatter(schema, typePath, inputData);
+  if (!validation.valid) {
+    // Convert validation result to JSON error format
+    printJson({
+      success: false,
+      error: 'Validation failed',
+      errors: validation.errors.map(e => ({
+        field: e.field,
+        value: e.value,
+        message: e.message,
+        expected: e.expected,
+        suggestion: e.suggestion,
+      })),
+    });
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Apply defaults for missing fields
+  const frontmatter = applyDefaults(schema, typePath, inputData);
+
+  // Get the name from the frontmatter
+  const nameField = typeDef.name_field ?? 'Name';
+  const itemName = frontmatter[nameField];
+  if (!itemName || typeof itemName !== 'string') {
+    printJson(jsonError(`Missing or invalid name field: ${nameField}`));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  // Determine output path based on type
+  const segments = typePath.split('/');
+  const dirMode = getDirMode(schema, typePath);
+  const isSubtype = isInstanceGroupedSubtype(schema, typePath);
+
+  let filePath: string;
+
+  if (dirMode === 'instance-grouped' && isSubtype) {
+    // Instance-grouped subtype
+    filePath = await createInstanceGroupedNoteFromJson(
+      schema,
+      vaultDir,
+      typePath,
+      typeDef,
+      frontmatter,
+      instanceName
+    );
+  } else if (dirMode === 'instance-grouped' && segments.length === 1) {
+    // Instance-grouped parent
+    filePath = await createInstanceParentFromJson(
+      schema,
+      vaultDir,
+      typePath,
+      typeDef,
+      frontmatter,
+      itemName
+    );
+  } else {
+    // Pooled mode
+    filePath = await createPooledNoteFromJson(
+      schema,
+      vaultDir,
+      typePath,
+      typeDef,
+      frontmatter,
+      itemName
+    );
+  }
+
+  return filePath;
+}
+
+/**
+ * Create a pooled note from JSON input.
+ */
+async function createPooledNoteFromJson(
+  schema: Schema,
+  vaultDir: string,
+  typePath: string,
+  typeDef: TypeDef,
+  frontmatter: Record<string, unknown>,
+  itemName: string
+): Promise<string> {
+  const outputDir = getOutputDirForType(schema, typePath);
+  if (!outputDir) {
+    printJson(jsonError(`No output_dir defined for type: ${typePath}`));
+    process.exit(ExitCodes.SCHEMA_ERROR);
+  }
+
+  const fullOutputDir = join(vaultDir, outputDir);
+  const filePath = join(fullOutputDir, `${itemName}.md`);
+
+  if (existsSync(filePath)) {
+    printJson(jsonError(`File already exists: ${relative(vaultDir, filePath)}`));
+    process.exit(ExitCodes.IO_ERROR);
+  }
+
+  // Generate body from body_sections
+  const body = generateBodyFromSections(typeDef.body_sections);
+  const fieldOrder = getFrontmatterOrder(typeDef);
+  const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(frontmatter);
+
+  await writeNote(filePath, frontmatter, body, orderedFields);
+  return filePath;
+}
+
+/**
+ * Create an instance parent from JSON input.
+ */
+async function createInstanceParentFromJson(
+  schema: Schema,
+  vaultDir: string,
+  typePath: string,
+  typeDef: TypeDef,
+  frontmatter: Record<string, unknown>,
+  instanceName: string
+): Promise<string> {
+  const outputDir = getOutputDir(schema, typePath);
+  if (!outputDir) {
+    printJson(jsonError(`No output_dir defined for type: ${typePath}`));
+    process.exit(ExitCodes.SCHEMA_ERROR);
+  }
+
+  await createInstanceFolder(vaultDir, outputDir, instanceName);
+  const filePath = getParentNotePath(vaultDir, outputDir, instanceName);
+
+  if (existsSync(filePath)) {
+    printJson(jsonError(`Instance already exists: ${relative(vaultDir, filePath)}`));
+    process.exit(ExitCodes.IO_ERROR);
+  }
+
+  const body = generateBodyFromSections(typeDef.body_sections);
+  const fieldOrder = getFrontmatterOrder(typeDef);
+  const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(frontmatter);
+
+  await writeNote(filePath, frontmatter, body, orderedFields);
+  return filePath;
+}
+
+/**
+ * Create an instance-grouped subtype note from JSON input.
+ */
+async function createInstanceGroupedNoteFromJson(
+  schema: Schema,
+  vaultDir: string,
+  typePath: string,
+  typeDef: TypeDef,
+  frontmatter: Record<string, unknown>,
+  instanceName?: string
+): Promise<string> {
+  const parentTypeName = getParentTypeName(schema, typePath);
+  if (!parentTypeName) {
+    printJson(jsonError('Could not determine parent type'));
+    process.exit(ExitCodes.SCHEMA_ERROR);
+  }
+
+  const parentOutputDir = getOutputDir(schema, parentTypeName);
+  if (!parentOutputDir) {
+    printJson(jsonError(`No output_dir defined for parent type: ${parentTypeName}`));
+    process.exit(ExitCodes.SCHEMA_ERROR);
+  }
+
+  // Instance name is required for instance-grouped subtypes
+  if (!instanceName) {
+    // Try to get from frontmatter (_instance field)
+    instanceName = frontmatter['_instance'] as string | undefined;
+    if (!instanceName) {
+      printJson(jsonError('Instance name required for instance-grouped subtypes. Use --instance flag or _instance field in JSON.'));
+      process.exit(ExitCodes.VALIDATION_ERROR);
+    }
+  }
+
+  // Verify instance exists
+  const instances = await listInstanceFolders(vaultDir, parentOutputDir);
+  if (!instances.includes(instanceName)) {
+    printJson(jsonError(`Instance not found: ${instanceName}. Available: ${instances.join(', ') || 'none'}`));
+    process.exit(ExitCodes.IO_ERROR);
+  }
+
+  const instanceDir = getInstanceFolderPath(vaultDir, parentOutputDir, instanceName);
+  const filenamePattern = getFilenamePattern(schema, typePath);
+  const subtypeName = typePath.split('/').pop() ?? 'note';
+  const filename = await generateFilename(filenamePattern, instanceDir, subtypeName);
+  const filePath = join(instanceDir, filename);
+
+  if (existsSync(filePath)) {
+    printJson(jsonError(`File already exists: ${relative(vaultDir, filePath)}`));
+    process.exit(ExitCodes.IO_ERROR);
+  }
+
+  // Remove _instance from frontmatter before writing
+  const { _instance, ...cleanFrontmatter } = frontmatter;
+
+  const body = generateBodyFromSections(typeDef.body_sections);
+  const fieldOrder = getFrontmatterOrder(typeDef);
+  const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(cleanFrontmatter);
+
+  await writeNote(filePath, cleanFrontmatter, body, orderedFields);
+  return filePath;
+}
+
+/**
+ * Generate body content from body sections (for non-interactive mode).
+ */
+function generateBodyFromSections(sections?: BodySection[]): string {
+  if (!sections || sections.length === 0) {
+    return '';
+  }
+  return generateBodySections(sections);
+}
 
 /**
  * Interactively resolve a full type path, navigating through subtypes.
