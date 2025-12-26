@@ -10,6 +10,7 @@ jsep.addBinaryOp('<', 7);
 jsep.addBinaryOp('>', 7);
 jsep.addBinaryOp('<=', 7);
 jsep.addBinaryOp('>=', 7);
+jsep.addUnaryOp('!');
 
 /**
  * Context for expression evaluation.
