@@ -1,6 +1,14 @@
 import { mkdtemp, rm, mkdir, writeFile, cp } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = join(__dirname, '../../..');
+const CLI_PATH = join(PROJECT_ROOT, 'dist/index.js');
 
 export const TEST_SCHEMA = {
   version: 2,
@@ -154,4 +162,55 @@ status: settled
 
 export async function cleanupTestVault(vaultDir: string): Promise<void> {
   await rm(vaultDir, { recursive: true, force: true });
+}
+
+export interface CLIResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+/**
+ * Run the ovault CLI with arguments and capture output.
+ * @param args CLI arguments (e.g., ['list', 'idea', '--status=raw'])
+ * @param vaultDir Optional vault directory (passed via --vault)
+ * @param stdin Optional stdin input for interactive commands
+ */
+export async function runCLI(
+  args: string[],
+  vaultDir?: string,
+  stdin?: string
+): Promise<CLIResult> {
+  const fullArgs = vaultDir ? ['--vault', vaultDir, ...args] : args;
+
+  return new Promise((resolve) => {
+    const proc = spawn('node', [CLI_PATH, ...fullArgs], {
+      cwd: PROJECT_ROOT,
+      env: { ...process.env, FORCE_COLOR: '0' }, // Disable colors for easier parsing
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    if (stdin) {
+      proc.stdin.write(stdin);
+      proc.stdin.end();
+    }
+
+    proc.on('close', (code) => {
+      resolve({
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        exitCode: code ?? 0,
+      });
+    });
+  });
 }
