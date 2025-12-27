@@ -323,13 +323,16 @@ export class NumberedSelectPrompt {
 
 /**
  * Show a numbered select prompt.
- * Returns undefined if user aborts.
+ * Returns the selected value, or null if user aborts (Ctrl+C/Escape).
  */
 export async function numberedSelect(
   message: string,
   choices: string[]
-): Promise<string | undefined> {
+): Promise<string | null> {
   const prompt = new NumberedSelectPrompt({ message, choices });
   const result = await prompt.run();
-  return result.value;
+  if (result.aborted) {
+    return null; // User cancelled - signal quit
+  }
+  return result.value ?? null;
 }

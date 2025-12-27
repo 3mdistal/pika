@@ -940,6 +940,11 @@ async function runInteractiveFix(
             const confirm = await promptConfirm(
               `    → Add type fields for '${issue.inferredType}'?`
             );
+            if (confirm === null) {
+              quit = true;
+              console.log(chalk.dim('    → Quit'));
+              break;
+            }
             if (confirm) {
               typePath = issue.inferredType;
             }
@@ -953,11 +958,11 @@ async function runInteractiveFix(
                 typeOptions
               );
 
-              if (selectedType === '[quit]') {
+              if (selectedType === null || selectedType === '[quit]') {
                 quit = true;
                 console.log(chalk.dim('    → Quit'));
                 break;
-              } else if (selectedType === '[skip]' || !selectedType) {
+              } else if (selectedType === '[skip]') {
                 console.log(chalk.dim('    → Skipped'));
                 skipped++;
                 break;
@@ -975,11 +980,11 @@ async function runInteractiveFix(
                     subtypeOptions
                   );
 
-                  if (selectedSubtype === '[quit]') {
+                  if (selectedSubtype === null || selectedSubtype === '[quit]') {
                     quit = true;
                     console.log(chalk.dim('    → Quit'));
                     break;
-                  } else if (selectedSubtype === '[skip]' || !selectedSubtype) {
+                  } else if (selectedSubtype === '[skip]') {
                     console.log(chalk.dim('    → Skipped'));
                     skipped++;
                     break;
@@ -1026,6 +1031,11 @@ async function runInteractiveFix(
             if (defaultValue !== undefined) {
               // Has default value - offer to use it
               const confirm = await promptConfirm(`    → Add with default '${JSON.stringify(defaultValue)}'?`);
+              if (confirm === null) {
+                quit = true;
+                console.log(chalk.dim('    → Quit'));
+                break;
+              }
               if (confirm) {
                 const fixResult = await applyFix(schema, result.path, issue, defaultValue);
                 if (fixResult.action === 'fixed') {
@@ -1053,10 +1063,10 @@ async function runInteractiveFix(
                   options
                 );
 
-                if (selected === '[quit]') {
+                if (selected === null || selected === '[quit]') {
                   quit = true;
                   console.log(chalk.dim('    → Quit'));
-                } else if (selected === '[skip]' || !selected) {
+                } else if (selected === '[skip]') {
                   console.log(chalk.dim('    → Skipped'));
                   skipped++;
                 } else {
@@ -1098,10 +1108,10 @@ async function runInteractiveFix(
               options
             );
 
-            if (selected === '[quit]') {
+            if (selected === null || selected === '[quit]') {
               quit = true;
               console.log(chalk.dim('    → Quit'));
-            } else if (selected === '[skip]' || !selected) {
+            } else if (selected === '[skip]') {
               console.log(chalk.dim('    → Skipped'));
               skipped++;
             } else {
@@ -1131,7 +1141,7 @@ async function runInteractiveFix(
               options
             );
 
-            if (selected === '[quit]') {
+            if (selected === null || selected === '[quit]') {
               quit = true;
               console.log(chalk.dim('    → Quit'));
             } else if (selected === '[remove field]') {

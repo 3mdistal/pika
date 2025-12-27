@@ -4,7 +4,7 @@ import { numberedSelect } from './numberedSelect.js';
 
 /**
  * Prompt for selection from a list of options.
- * Returns undefined if user cancels or skips.
+ * Returns the selected value, or null if user cancels (Ctrl+C/Escape).
  * 
  * Features:
  * - Number keys (1-9, 0) for immediate selection
@@ -14,7 +14,7 @@ import { numberedSelect } from './numberedSelect.js';
 export async function promptSelection(
   message: string,
   options: string[]
-): Promise<string | undefined> {
+): Promise<string | null> {
   return numberedSelect(message, options);
 }
 
@@ -78,8 +78,9 @@ export async function promptMultiInput(message: string): Promise<string[]> {
 
 /**
  * Prompt for confirmation.
+ * Returns true (yes), false (no), or null (cancelled/quit via Ctrl+C).
  */
-export async function promptConfirm(message: string): Promise<boolean> {
+export async function promptConfirm(message: string): Promise<boolean | null> {
   const response = await prompts({
     type: 'confirm',
     name: 'value',
@@ -87,6 +88,10 @@ export async function promptConfirm(message: string): Promise<boolean> {
     initial: false,
   });
 
+  // prompts returns {} on Ctrl+C, so response.value is undefined
+  if (response.value === undefined) {
+    return null; // User cancelled - signal quit
+  }
   return response.value as boolean;
 }
 
