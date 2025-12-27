@@ -508,4 +508,397 @@ priority: medium
       expect(result.stdout).toContain('Total errors: 2');
     });
   });
+
+  describe('--fix --auto mode', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await mkdtemp(join(tmpdir(), 'ovault-audit-fix-test-'));
+      await mkdir(join(tempVaultDir, '.ovault'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.ovault', 'schema.json'),
+        JSON.stringify(TEST_SCHEMA, null, 2)
+      );
+      await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      await rm(tempVaultDir, { recursive: true, force: true });
+    });
+
+    it('should auto-fix missing required field with default', async () => {
+      // Create a file missing the 'status' field (which has default: 'raw')
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Missing Status.md'),
+        `---
+type: idea
+priority: medium
+---
+Some content
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--fix', '--auto'], tempVaultDir);
+
+      expect(result.stdout).toContain('Auto-fixing');
+      expect(result.stdout).toContain('Added status');
+      expect(result.stdout).toContain('Fixed: 1 issues');
+
+      // Verify the file was actually fixed
+      const { readFile } = await import('fs/promises');
+      const content = await readFile(join(tempVaultDir, 'Ideas', 'Missing Status.md'), 'utf-8');
+      expect(content).toContain('status: raw');
+    });
+
+    it('should report non-fixable issues for manual review', async () => {
+      // Create a file with an invalid enum value (not auto-fixable)
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Invalid Enum.md'),
+        `---
+type: idea
+status: invalid-status
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--fix', '--auto'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('Issues requiring manual review');
+      expect(result.stdout).toContain('Invalid status value');
+      expect(result.stdout).toContain('Remaining: 1 issues');
+    });
+
+    it('should handle mix of fixable and non-fixable issues', async () => {
+      // File with missing status (fixable) and invalid enum (not fixable)
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Fixable.md'),
+        `---
+type: idea
+priority: medium
+---
+`
+      );
+
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Not Fixable.md'),
+        `---
+type: idea
+status: bad-value
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--fix', '--auto'], tempVaultDir);
+
+      expect(result.stdout).toContain('Fixed: 1 issues');
+      expect(result.stdout).toContain('Remaining: 1 issues');
+    });
+
+    it('should exit with 0 when all issues are fixed', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Missing Status.md'),
+        `---
+type: idea
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--fix', '--auto'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Fixed: 1 issues');
+      expect(result.stdout).toContain('Remaining: 0 issues');
+    });
+  });
+
+  describe('--fix option validation', () => {
+    it('should error when --auto is used without --fix', async () => {
+      const result = await runCLI(['audit', '--auto'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('--auto requires --fix');
+    });
+
+    it('should error when --fix is used with --output json', async () => {
+      const result = await runCLI(['audit', '--fix', '--output', 'json'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('--fix is not compatible with --output json');
+    });
+  });
+
+  describe('--fix interactive mode', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await mkdtemp(join(tmpdir(), 'ovault-audit-fix-test-'));
+      await mkdir(join(tempVaultDir, '.ovault'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.ovault', 'schema.json'),
+        JSON.stringify(TEST_SCHEMA, null, 2)
+      );
+      await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      await rm(tempVaultDir, { recursive: true, force: true });
+    });
+
+    it('should show no issues message when vault is clean', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Good.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--fix'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('No issues found');
+    });
+
+    it('should skip issues when user provides no input in interactive mode', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Bad.md'),
+        `---
+type: idea
+priority: medium
+---
+`
+      );
+
+      // Interactive mode with 'n' input (decline fix) followed by newline
+      // This should decline the prompt and skip the issue
+      const result = await runCLI(['audit', 'idea', '--fix'], tempVaultDir, 'n\n');
+
+      expect(result.stdout).toContain('Missing required field: status');
+      expect(result.stdout).toContain('Skipped');
+    });
+  });
+
+  describe('vault-wide scanning', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await mkdtemp(join(tmpdir(), 'ovault-audit-vaultwide-'));
+      await mkdir(join(tempVaultDir, '.ovault'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.ovault', 'schema.json'),
+        JSON.stringify(TEST_SCHEMA, null, 2)
+      );
+      await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      await rm(tempVaultDir, { recursive: true, force: true });
+    });
+
+    it('should detect orphan files outside managed directories', async () => {
+      // Create a file in an unmanaged directory (not Ideas/, Objectives/, etc.)
+      await mkdir(join(tempVaultDir, 'Random'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, 'Random', 'Stray Note.md'),
+        `---
+title: Some random note
+---
+No type field here.
+`
+      );
+
+      // Run audit without specifying a type (vault-wide scan)
+      const result = await runCLI(['audit'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('Stray Note.md');
+      expect(result.stdout).toContain("No 'type' field");
+    });
+
+    it('should detect files at vault root without type', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Root Note.md'),
+        `---
+title: A root level note
+---
+`
+      );
+
+      const result = await runCLI(['audit'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('Root Note.md');
+      expect(result.stdout).toContain("No 'type' field");
+    });
+
+    it('should exclude hidden directories (starting with .)', async () => {
+      // Create a file in a hidden directory
+      await mkdir(join(tempVaultDir, '.hidden'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.hidden', 'Secret.md'),
+        `---
+title: Hidden file
+---
+`
+      );
+
+      // Also create a valid file so audit runs
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Valid.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('Secret.md');
+      expect(result.stdout).not.toContain('.hidden');
+    });
+
+    it('should respect .gitignore patterns', async () => {
+      // Create a .gitignore
+      await writeFile(
+        join(tempVaultDir, '.gitignore'),
+        'ignored-dir/\n*.tmp.md\n'
+      );
+
+      // Create files that should be ignored
+      await mkdir(join(tempVaultDir, 'ignored-dir'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, 'ignored-dir', 'Ignored.md'),
+        `---
+title: Should be ignored
+---
+`
+      );
+
+      await writeFile(
+        join(tempVaultDir, 'temp.tmp.md'),
+        `---
+title: Temp file
+---
+`
+      );
+
+      // Create a valid file
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Valid.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('Ignored.md');
+      expect(result.stdout).not.toContain('temp.tmp.md');
+    });
+
+    it('should respect OVAULT_AUDIT_EXCLUDE env var', async () => {
+      // Create a directory that should be excluded via env var
+      await mkdir(join(tempVaultDir, 'Archive'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, 'Archive', 'Old Note.md'),
+        `---
+title: Archived
+---
+`
+      );
+
+      // Create a valid file
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Valid.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      // Set env var and run
+      const originalEnv = process.env.OVAULT_AUDIT_EXCLUDE;
+      process.env.OVAULT_AUDIT_EXCLUDE = 'Archive';
+
+      try {
+        const result = await runCLI(['audit'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).not.toContain('Old Note.md');
+        expect(result.stdout).not.toContain('Archive');
+      } finally {
+        // Restore env
+        if (originalEnv === undefined) {
+          delete process.env.OVAULT_AUDIT_EXCLUDE;
+        } else {
+          process.env.OVAULT_AUDIT_EXCLUDE = originalEnv;
+        }
+      }
+    });
+
+    it('should respect schema audit.ignored_directories config', async () => {
+      // Update schema with ignored_directories
+      const schemaWithExclusions = {
+        ...TEST_SCHEMA,
+        audit: {
+          ignored_directories: ['Templates', 'Archive/Old'],
+        },
+      };
+      await writeFile(
+        join(tempVaultDir, '.ovault', 'schema.json'),
+        JSON.stringify(schemaWithExclusions, null, 2)
+      );
+
+      // Create directories that should be excluded
+      await mkdir(join(tempVaultDir, 'Templates'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, 'Templates', 'Template.md'),
+        `---
+title: A template
+---
+`
+      );
+
+      await mkdir(join(tempVaultDir, 'Archive', 'Old'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, 'Archive', 'Old', 'Ancient.md'),
+        `---
+title: Old stuff
+---
+`
+      );
+
+      // Create a valid file
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Valid.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('Template.md');
+      expect(result.stdout).not.toContain('Ancient.md');
+    });
+  });
 });

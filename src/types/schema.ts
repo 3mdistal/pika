@@ -74,6 +74,12 @@ export const TypeSchema = z.object({
   subtypes: z.record(SubtypeSchema).optional(),
 });
 
+// Audit configuration schema
+export const AuditConfigSchema = z.object({
+  ignored_directories: z.array(z.string()).optional(),
+  allowed_extra_fields: z.array(z.string()).optional(),
+});
+
 // Root schema
 export const OvaultSchema = z.object({
   version: z.number().optional().default(1),
@@ -81,6 +87,7 @@ export const OvaultSchema = z.object({
   enums: z.record(z.array(z.string())).optional(),
   dynamic_sources: z.record(DynamicSourceSchema).optional(),
   types: z.record(TypeSchema),
+  audit: AuditConfigSchema.optional(),
 });
 
 // Inferred types
