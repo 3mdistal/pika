@@ -1,55 +1,241 @@
+/**
+ * Open command - open a note via query resolution.
+ * 
+ * Supports multiple output modes:
+ * - obsidian: Open in Obsidian via URI scheme (default)
+ * - editor: Open in $VISUAL or $EDITOR
+ * - system: Open with system default (xdg-open/open/start)
+ * - print: Just print the resolved path (for scripting)
+ */
+
 import { Command } from 'commander';
-import { exec } from 'child_process';
-import { join, isAbsolute, relative, basename } from 'path';
+import { exec, spawn } from 'child_process';
+import { join, relative, basename } from 'path';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { resolveVaultDir, isFile } from '../lib/vault.js';
+import { loadSchema } from '../lib/schema.js';
 import { printError, printSuccess, printInfo } from '../lib/prompt.js';
+import { printJson, jsonSuccess, jsonError, ExitCodes } from '../lib/output.js';
+import { buildNoteIndex, resolveNoteQuery, type ManagedFile } from '../lib/navigation.js';
+import { pickFile, parsePickerMode, type PickerMode } from '../lib/picker.js';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+type AppMode = 'obsidian' | 'editor' | 'system' | 'print';
+
+interface OpenOptions {
+  app?: string;
+  picker?: string;
+  output?: string;
+}
+
+// ============================================================================
+// Command Definition
+// ============================================================================
 
 export const openCommand = new Command('open')
-  .description('Open a note in Obsidian via URI scheme')
-  .argument('<file>', 'Path to the file to open (relative or absolute)')
+  .description('Open a note by name or path query')
+  .argument('<query>', 'Note name, basename, or path to open')
+  .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
+  .option('--picker <mode>', 'Selection mode: auto (default), fzf, numbered, none')
+  .option('-o, --output <format>', 'Output format: text (default) or json')
   .addHelpText('after', `
-Examples:
-  ovault open Ideas/My\\ Idea.md
-  ovault open "Objectives/Tasks/My Task.md"
+App Modes:
+  obsidian    Open in Obsidian via URI scheme (default)
+  editor      Open in $VISUAL or $EDITOR
+  system      Open with system default handler
+  print       Print the resolved path (for scripting)
 
-Note: Obsidian must be running for the file to open.`)
-  .action(async (filePath: string, _options: unknown, cmd: Command) => {
+Picker Modes:
+  auto        Use fzf if available, else numbered select (default)
+  fzf         Force fzf (error if unavailable)
+  numbered    Force numbered select
+  none        Error on ambiguity (for non-interactive use)
+
+Examples:
+  ovault open "My Note"              # Open by basename
+  ovault open Ideas/My\\ Note.md     # Open by path
+  ovault open "my note"              # Case-insensitive match
+  ovault open "My Note" --app editor # Open in $EDITOR
+  ovault open "My Note" --app print  # Just print path
+  ovault open "Amb" --picker none --output json  # Scripting mode
+
+Note: Obsidian must be running for --app obsidian to work.
+      For --app editor, set $VISUAL or $EDITOR environment variable.`)
+  .action(async (query: string, options: OpenOptions, cmd: Command) => {
+    const jsonMode = options.output === 'json';
+    const appMode = parseAppMode(options.app);
+    const pickerMode = parsePickerMode(options.picker);
+
+    // JSON mode implies non-interactive
+    const effectivePickerMode: PickerMode = jsonMode ? 'none' : pickerMode;
+
     try {
       const parentOpts = cmd.parent?.opts() as { vault?: string } | undefined;
       const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const schema = await loadSchema(vaultDir);
 
-      // Resolve file path
-      const resolvedPath = isAbsolute(filePath) ? filePath : join(vaultDir, filePath);
+      // Build note index and resolve query
+      const index = await buildNoteIndex(schema, vaultDir);
+      const resolution = resolveNoteQuery(index, query);
 
-      if (!(await isFile(resolvedPath))) {
-        printError(`File not found: ${resolvedPath}`);
+      let targetFile: ManagedFile | null = null;
+
+      if (resolution.exact) {
+        // Unambiguous match
+        targetFile = resolution.exact;
+      } else if (resolution.candidates.length > 0) {
+        // Ambiguous or fuzzy match - use picker
+        const pickerResult = await pickFile(resolution.candidates, {
+          mode: effectivePickerMode,
+          prompt: 'Select note to open',
+        });
+
+        if (pickerResult.error) {
+          if (jsonMode) {
+            const errorDetails = pickerResult.candidates
+              ? {
+                  errors: pickerResult.candidates.map(c => ({
+                    field: 'candidate',
+                    value: c.relativePath,
+                    message: 'Matching file',
+                  })),
+                }
+              : {};
+            printJson(jsonError(pickerResult.error, errorDetails));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          printError(pickerResult.error);
+          if (pickerResult.candidates && pickerResult.candidates.length > 0) {
+            console.error('\nMatching files:');
+            for (const c of pickerResult.candidates) {
+              console.error(`  ${c.relativePath}`);
+            }
+          }
+          process.exit(1);
+        }
+
+        if (pickerResult.cancelled || !pickerResult.selected) {
+          // User cancelled
+          process.exit(0);
+        }
+
+        targetFile = pickerResult.selected;
+      } else {
+        // No matches at all
+        const error = `No matching notes found for: ${query}`;
+        if (jsonMode) {
+          printJson(jsonError(error));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        printError(error);
         process.exit(1);
       }
 
-      await openInObsidian(vaultDir, resolvedPath);
+      // We have a target file - open it
+      const fullPath = targetFile.path;
+
+      // Verify file exists (it should, but be safe)
+      if (!(await isFile(fullPath))) {
+        const error = `File not found: ${fullPath}`;
+        if (jsonMode) {
+          printJson(jsonError(error));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        printError(error);
+        process.exit(1);
+      }
+
+      // Open based on app mode
+      switch (appMode) {
+        case 'print':
+          if (jsonMode) {
+            printJson(jsonSuccess({
+              path: fullPath,
+              data: {
+                relativePath: targetFile.relativePath,
+                absolutePath: fullPath,
+              },
+            }));
+          } else {
+            console.log(fullPath);
+          }
+          break;
+
+        case 'editor':
+          await openInEditor(fullPath, jsonMode);
+          break;
+
+        case 'system':
+          await openWithSystem(fullPath, jsonMode);
+          break;
+
+        case 'obsidian':
+        default:
+          await openInObsidian(vaultDir, fullPath, jsonMode);
+          break;
+      }
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      if (jsonMode) {
+        printJson(jsonError(message));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(message);
       process.exit(1);
     }
   });
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function parseAppMode(value: string | undefined): AppMode {
+  if (!value) return 'obsidian';
+  
+  const normalized = value.toLowerCase();
+  if (normalized === 'editor') return 'editor';
+  if (normalized === 'system') return 'system';
+  if (normalized === 'print') return 'print';
+  return 'obsidian';
+}
+
+// ============================================================================
+// Obsidian Opening
+// ============================================================================
+
 /**
  * Open a file in Obsidian using the obsidian:// URI scheme.
  */
-export async function openInObsidian(vaultDir: string, filePath: string): Promise<void> {
+export async function openInObsidian(
+  vaultDir: string,
+  filePath: string,
+  jsonMode: boolean = false
+): Promise<void> {
   const vaultName = await resolveVaultName(vaultDir);
   const relativePath = relative(vaultDir, filePath);
 
   // Build Obsidian URI
-  // Format: obsidian://open?vault=VAULT_NAME&file=PATH
   const uri = buildObsidianUri(vaultName, relativePath);
 
-  printInfo(`Opening in Obsidian: ${basename(filePath)}`);
+  if (!jsonMode) {
+    printInfo(`Opening in Obsidian: ${basename(filePath)}`);
+  }
 
   // Open URI based on platform
   await openUri(uri);
+
+  if (jsonMode) {
+    printJson(jsonSuccess({
+      message: 'Opened in Obsidian',
+      path: filePath,
+    }));
+  } else {
+    printSuccess('Opened in Obsidian');
+  }
 }
 
 /**
@@ -58,15 +244,10 @@ export async function openInObsidian(vaultDir: string, filePath: string): Promis
 async function resolveVaultName(vaultDir: string): Promise<string> {
   const appJsonPath = join(vaultDir, '.obsidian', 'app.json');
 
-  // Try to get vault name from app.json (if it contains a custom name)
-  // Obsidian stores vault name in the config
   if (existsSync(appJsonPath)) {
     try {
       const content = await readFile(appJsonPath, 'utf-8');
       const config = JSON.parse(content) as Record<string, unknown>;
-      // Note: Obsidian doesn't actually store vault name in app.json
-      // The vault name is determined by the folder name or the name in Obsidian's vault list
-      // For now, we'll just use the directory name
       if (typeof config.vaultName === 'string') {
         return config.vaultName;
       }
@@ -75,7 +256,6 @@ async function resolveVaultName(vaultDir: string): Promise<string> {
     }
   }
 
-  // Fall back to directory name
   return basename(vaultDir);
 }
 
@@ -101,13 +281,10 @@ async function openUri(uri: string): Promise<void> {
 
   let command: string;
   if (platform === 'darwin') {
-    // macOS
     command = `open "${uri}"`;
   } else if (platform === 'win32') {
-    // Windows
     command = `start "" "${uri}"`;
   } else {
-    // Linux and others
     command = `xdg-open "${uri}"`;
   }
 
@@ -116,9 +293,116 @@ async function openUri(uri: string): Promise<void> {
       if (error) {
         reject(new Error(`Failed to open Obsidian: ${error.message}`));
       } else {
-        printSuccess('✓ Opened in Obsidian');
         resolve();
       }
     });
+  });
+}
+
+// ============================================================================
+// Editor Opening
+// ============================================================================
+
+/**
+ * Open a file in the user's preferred editor ($VISUAL or $EDITOR).
+ */
+async function openInEditor(filePath: string, jsonMode: boolean): Promise<void> {
+  const editor = process.env['VISUAL'] || process.env['EDITOR'];
+
+  if (!editor) {
+    throw new Error(
+      'No editor configured. Set the VISUAL or EDITOR environment variable.'
+    );
+  }
+
+  if (!jsonMode) {
+    printInfo(`Opening in editor: ${basename(filePath)}`);
+  }
+
+  // Parse editor command (might be "code -w" or similar)
+  const parts = editor.split(/\s+/);
+  const cmd = parts[0]!;
+  const args = [...parts.slice(1), filePath];
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, {
+      stdio: 'inherit',
+      shell: false,
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        if (jsonMode) {
+          printJson(jsonSuccess({
+            message: 'Opened in editor',
+            path: filePath,
+          }));
+        } else {
+          printSuccess('Opened in editor');
+        }
+        resolve();
+      } else {
+        reject(new Error(`Editor exited with code ${code}`));
+      }
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Failed to open editor: ${err.message}`));
+    });
+  });
+}
+
+// ============================================================================
+// System Opening
+// ============================================================================
+
+/**
+ * Open a file with the system's default handler.
+ */
+async function openWithSystem(filePath: string, jsonMode: boolean): Promise<void> {
+  if (!jsonMode) {
+    printInfo(`Opening with system: ${basename(filePath)}`);
+  }
+
+  const platform = process.platform;
+
+  let command: string;
+  let args: string[];
+
+  if (platform === 'darwin') {
+    command = 'open';
+    args = [filePath];
+  } else if (platform === 'win32') {
+    command = 'cmd';
+    args = ['/c', 'start', '', filePath];
+  } else {
+    command = 'xdg-open';
+    args = [filePath];
+  }
+
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, {
+      stdio: 'ignore',
+      detached: true,
+    });
+
+    proc.unref();
+
+    proc.on('error', (err) => {
+      reject(new Error(`Failed to open file: ${err.message}`));
+    });
+
+    // Give it a moment to start, then resolve
+    setTimeout(() => {
+      if (jsonMode) {
+        printJson(jsonSuccess({
+          message: 'Opened with system handler',
+          path: filePath,
+        }));
+      } else {
+        printSuccess('Opened with system handler');
+      }
+      resolve();
+    }, 100);
   });
 }

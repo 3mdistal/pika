@@ -69,6 +69,17 @@ ovault list --paths idea                       # Show vault-relative paths
 ovault list --fields=status,priority idea      # Show selected frontmatter fields in a table
 ovault list --paths --fields=status objective  # Combine paths + fields
 
+# Open a note by query
+ovault open "My Note"                          # Open in Obsidian (default)
+ovault open "My Note" --app editor             # Open in $EDITOR
+ovault open "My Note" --app print              # Just print the path
+ovault open "Amb" --picker fzf                 # Use fzf for ambiguous matches
+
+# Generate a wikilink
+ovault link "My Note"                          # Output: [[My Note]]
+ovault link "My Note" --bare                   # Output: My Note (no brackets)
+ovault link "Amb" --output json                # JSON output for scripting
+
 # Help
 ovault help
 ```
@@ -289,6 +300,53 @@ ovault/
 my-vault/
 └── .ovault/
     └── schema.json     # Vault-specific type definitions
+```
+
+## Navigation Commands
+
+### `ovault open <query>`
+
+Open a note by name or path query. Supports multiple output modes:
+
+```sh
+ovault open "My Note"                    # Open in Obsidian (default)
+ovault open "my note"                    # Case-insensitive
+ovault open "Ideas/My Note"              # By path
+ovault open "My Note" --app editor       # Open in $VISUAL or $EDITOR
+ovault open "My Note" --app system       # Open with system default
+ovault open "My Note" --app print        # Just print the resolved path
+```
+
+**Picker modes** (when query matches multiple files):
+- `--picker auto` - Use fzf if available, else numbered select (default)
+- `--picker fzf` - Force fzf
+- `--picker numbered` - Force numbered select
+- `--picker none` - Error on ambiguity (for scripting)
+
+**JSON output** (implies `--picker none`):
+```sh
+ovault open "My Note" --app print --output json
+```
+
+### `ovault link <query>`
+
+Generate a wikilink to a note. Uses shortest unambiguous form:
+- Basename if unique across vault: `[[My Note]]`
+- Full path if ambiguous: `[[Ideas/My Note]]`
+
+```sh
+ovault link "My Note"                    # Output: [[My Note]]
+ovault link "My Note" --bare             # Output: My Note
+ovault link "Amb" --picker none --output json  # Scripting mode
+```
+
+**Neovim/scripting example:**
+```sh
+# Copy wikilink to clipboard (macOS)
+ovault link "My Note" | pbcopy
+
+# Use in a Lua script
+local link = vim.fn.system("ovault link 'My Note' --picker none --bare")
 ```
 
 ## Running Tests
