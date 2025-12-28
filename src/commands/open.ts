@@ -2,10 +2,12 @@
  * Open command - open a note via query resolution.
  * 
  * Supports multiple output modes:
- * - obsidian: Open in Obsidian via URI scheme (default)
+ * - obsidian: Open in Obsidian via URI scheme (default, or set OVAULT_DEFAULT_APP)
  * - editor: Open in $VISUAL or $EDITOR
  * - system: Open with system default (xdg-open/open/start)
  * - print: Just print the resolved path (for scripting)
+ * 
+ * If no query is provided, shows a picker with all vault files.
  */
 
 import { Command } from 'commander';
@@ -38,7 +40,7 @@ interface OpenOptions {
 
 export const openCommand = new Command('open')
   .description('Open a note by name or path query')
-  .argument('<query>', 'Note name, basename, or path to open')
+  .argument('[query]', 'Note name, basename, or path to open (omit to browse all)')
   .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
   .option('--picker <mode>', 'Selection mode: auto (default), fzf, numbered, none')
   .option('-o, --output <format>', 'Output format: text (default) or json')
@@ -55,7 +57,11 @@ Picker Modes:
   numbered    Force numbered select
   none        Error on ambiguity (for non-interactive use)
 
+Environment Variables:
+  OVAULT_DEFAULT_APP    Default app mode (obsidian, editor, system, print)
+
 Examples:
+  ovault open                        # Browse all notes with picker
   ovault open "My Note"              # Open by basename
   ovault open Ideas/My\\ Note.md     # Open by path
   ovault open "my note"              # Case-insensitive match
@@ -65,7 +71,7 @@ Examples:
 
 Note: Obsidian must be running for --app obsidian to work.
       For --app editor, set $VISUAL or $EDITOR environment variable.`)
-  .action(async (query: string, options: OpenOptions, cmd: Command) => {
+  .action(async (query: string | undefined, options: OpenOptions, cmd: Command) => {
     const jsonMode = options.output === 'json';
     const appMode = parseAppMode(options.app);
     const pickerMode = parsePickerMode(options.picker);
@@ -78,61 +84,96 @@ Note: Obsidian must be running for --app obsidian to work.
       const vaultDir = resolveVaultDir(parentOpts ?? {});
       const schema = await loadSchema(vaultDir);
 
-      // Build note index and resolve query
+      // Build note index
       const index = await buildNoteIndex(schema, vaultDir);
-      const resolution = resolveNoteQuery(index, query);
 
       let targetFile: ManagedFile | null = null;
 
-      if (resolution.exact) {
-        // Unambiguous match
-        targetFile = resolution.exact;
-      } else if (resolution.candidates.length > 0) {
-        // Ambiguous or fuzzy match - use picker
-        const pickerResult = await pickFile(resolution.candidates, {
+      if (!query) {
+        // No query - show picker with all files
+        if (index.allFiles.length === 0) {
+          const error = 'No notes found in vault';
+          if (jsonMode) {
+            printJson(jsonError(error));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          printError(error);
+          process.exit(1);
+        }
+
+        const pickerResult = await pickFile(index.allFiles, {
           mode: effectivePickerMode,
           prompt: 'Select note to open',
         });
 
         if (pickerResult.error) {
           if (jsonMode) {
-            const errorDetails = pickerResult.candidates
-              ? {
-                  errors: pickerResult.candidates.map(c => ({
-                    field: 'candidate',
-                    value: c.relativePath,
-                    message: 'Matching file',
-                  })),
-                }
-              : {};
-            printJson(jsonError(pickerResult.error, errorDetails));
+            printJson(jsonError(pickerResult.error));
             process.exit(ExitCodes.VALIDATION_ERROR);
           }
           printError(pickerResult.error);
-          if (pickerResult.candidates && pickerResult.candidates.length > 0) {
-            console.error('\nMatching files:');
-            for (const c of pickerResult.candidates) {
-              console.error(`  ${c.relativePath}`);
-            }
-          }
           process.exit(1);
         }
 
         if (pickerResult.cancelled || !pickerResult.selected) {
-          // User cancelled
           process.exit(0);
         }
 
         targetFile = pickerResult.selected;
       } else {
-        // No matches at all
-        const error = `No matching notes found for: ${query}`;
-        if (jsonMode) {
-          printJson(jsonError(error));
-          process.exit(ExitCodes.VALIDATION_ERROR);
+        // Query provided - resolve it
+        const resolution = resolveNoteQuery(index, query);
+
+        if (resolution.exact) {
+          // Unambiguous match
+          targetFile = resolution.exact;
+        } else if (resolution.candidates.length > 0) {
+          // Ambiguous or fuzzy match - use picker
+          const pickerResult = await pickFile(resolution.candidates, {
+            mode: effectivePickerMode,
+            prompt: 'Select note to open',
+          });
+
+          if (pickerResult.error) {
+            if (jsonMode) {
+              const errorDetails = pickerResult.candidates
+                ? {
+                    errors: pickerResult.candidates.map(c => ({
+                      field: 'candidate',
+                      value: c.relativePath,
+                      message: 'Matching file',
+                    })),
+                  }
+                : {};
+              printJson(jsonError(pickerResult.error, errorDetails));
+              process.exit(ExitCodes.VALIDATION_ERROR);
+            }
+            printError(pickerResult.error);
+            if (pickerResult.candidates && pickerResult.candidates.length > 0) {
+              console.error('\nMatching files:');
+              for (const c of pickerResult.candidates) {
+                console.error(`  ${c.relativePath}`);
+              }
+            }
+            process.exit(1);
+          }
+
+          if (pickerResult.cancelled || !pickerResult.selected) {
+            // User cancelled
+            process.exit(0);
+          }
+
+          targetFile = pickerResult.selected;
+        } else {
+          // No matches at all
+          const error = `No matching notes found for: ${query}`;
+          if (jsonMode) {
+            printJson(jsonError(error));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          printError(error);
+          process.exit(1);
         }
-        printError(error);
-        process.exit(1);
       }
 
       // We have a target file - open it
@@ -194,12 +235,16 @@ Note: Obsidian must be running for --app obsidian to work.
 // ============================================================================
 
 function parseAppMode(value: string | undefined): AppMode {
-  if (!value) return 'obsidian';
+  // Use explicit value, then env var, then default to obsidian
+  const effectiveValue = value ?? process.env['OVAULT_DEFAULT_APP'];
   
-  const normalized = value.toLowerCase();
+  if (!effectiveValue) return 'obsidian';
+  
+  const normalized = effectiveValue.toLowerCase();
   if (normalized === 'editor') return 'editor';
   if (normalized === 'system') return 'system';
   if (normalized === 'print') return 'print';
+  if (normalized === 'obsidian') return 'obsidian';
   return 'obsidian';
 }
 

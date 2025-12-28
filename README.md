@@ -69,13 +69,15 @@ ovault list --paths idea                       # Show vault-relative paths
 ovault list --fields=status,priority idea      # Show selected frontmatter fields in a table
 ovault list --paths --fields=status objective  # Combine paths + fields
 
-# Open a note by query
+# Open a note by query (or browse all)
+ovault open                                    # Browse all notes with picker
 ovault open "My Note"                          # Open in Obsidian (default)
 ovault open "My Note" --app editor             # Open in $EDITOR
 ovault open "My Note" --app print              # Just print the path
 ovault open "Amb" --picker fzf                 # Use fzf for ambiguous matches
 
-# Generate a wikilink
+# Generate a wikilink (or browse all)
+ovault link                                    # Browse all notes with picker
 ovault link "My Note"                          # Output: [[My Note]]
 ovault link "My Note" --bare                   # Output: My Note (no brackets)
 ovault link "Amb" --output json                # JSON output for scripting
@@ -304,11 +306,12 @@ my-vault/
 
 ## Navigation Commands
 
-### `ovault open <query>`
+### `ovault open [query]`
 
-Open a note by name or path query. Supports multiple output modes:
+Open a note by name or path query. If no query is provided, shows a picker to browse all notes.
 
 ```sh
+ovault open                              # Browse all notes with picker
 ovault open "My Note"                    # Open in Obsidian (default)
 ovault open "my note"                    # Case-insensitive
 ovault open "Ideas/My Note"              # By path
@@ -317,7 +320,18 @@ ovault open "My Note" --app system       # Open with system default
 ovault open "My Note" --app print        # Just print the resolved path
 ```
 
-**Picker modes** (when query matches multiple files):
+**App modes:**
+- `obsidian` - Open in Obsidian via URI scheme (default)
+- `editor` - Open in `$VISUAL` or `$EDITOR`
+- `system` - Open with system default handler
+- `print` - Just print the resolved path
+
+**Environment variable:** Set `OVAULT_DEFAULT_APP` to change the default app mode:
+```sh
+export OVAULT_DEFAULT_APP=editor  # Always open in $EDITOR by default
+```
+
+**Picker modes** (when query matches multiple files or no query):
 - `--picker auto` - Use fzf if available, else numbered select (default)
 - `--picker fzf` - Force fzf
 - `--picker numbered` - Force numbered select
@@ -328,13 +342,14 @@ ovault open "My Note" --app print        # Just print the resolved path
 ovault open "My Note" --app print --output json
 ```
 
-### `ovault link <query>`
+### `ovault link [query]`
 
-Generate a wikilink to a note. Uses shortest unambiguous form:
+Generate a wikilink to a note. If no query is provided, shows a picker to browse all notes. Uses shortest unambiguous form:
 - Basename if unique across vault: `[[My Note]]`
 - Full path if ambiguous: `[[Ideas/My Note]]`
 
 ```sh
+ovault link                              # Browse all notes with picker
 ovault link "My Note"                    # Output: [[My Note]]
 ovault link "My Note" --bare             # Output: My Note
 ovault link "Amb" --picker none --output json  # Scripting mode

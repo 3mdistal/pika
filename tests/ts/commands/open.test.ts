@@ -64,12 +64,13 @@ describe('open command', () => {
       expect(result.stderr.length).toBeGreaterThan(0);
     });
 
-    it('should require a query argument', async () => {
+    it('should show picker prompt when no query (requires TTY)', async () => {
+      // Without a TTY, should error about needing interactive mode
       const result = await runCLI(['open'], vaultDir);
 
       expect(result.exitCode).toBe(1);
-      // Commander shows usage error for missing required argument
-      expect(result.stderr).toContain('required');
+      // In non-TTY context, it errors about needing a terminal
+      expect(result.stderr).toContain('terminal');
     });
   });
 
@@ -114,6 +115,27 @@ describe('open command', () => {
       expect(result.stdout).toContain('Open a note');
       expect(result.stdout).toContain('App Modes');
       expect(result.stdout).toContain('Picker Modes');
+      expect(result.stdout).toContain('OVAULT_DEFAULT_APP');
+    });
+  });
+
+  describe('no query (browse all)', () => {
+    it('should error in non-interactive mode with no query', async () => {
+      // With --picker none and no query, should error about needing interactive mode
+      const result = await runCLI(['open', '--picker', 'none'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      // Should complain about ambiguity or needing interactive mode
+      expect(result.stderr.length).toBeGreaterThan(0);
+    });
+
+    it('should output JSON error with --output json and no query', async () => {
+      const result = await runCLI(['open', '--output', 'json'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+      // JSON mode implies --picker none, so should error about ambiguity
     });
   });
 
