@@ -50,9 +50,13 @@ pnpm test             # Run vitest tests
 pnpm typecheck        # Type checking
 ```
 
+**Important**: When creating a git worktree, run `pnpm build` after `pnpm install`. The command tests (`tests/ts/commands/`) require the built `dist/` output to run correctly.
+
 ## Testing
 
 Tests live in `tests/ts/` with fixtures in `tests/fixtures/vault/`. Run `pnpm test` before committing.
+
+**PTY tests**: Tests in `tests/ts/lib/*.pty.test.ts` use node-pty to spawn real terminal processes. These are slower (~1s each) but catch interactive UI bugs that unit tests miss.
 
 ## Issue Tracking
 
