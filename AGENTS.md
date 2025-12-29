@@ -20,6 +20,7 @@ src/
 │   └── schema.ts      # Schema inspection
 ├── lib/               # Shared utilities
 │   ├── schema.ts      # Schema loading & resolution
+│   ├── template.ts    # Template discovery & parsing
 │   ├── frontmatter.ts # YAML frontmatter parsing
 │   ├── query.ts       # Filter expression evaluation
 │   ├── vault.ts       # Vault discovery & file ops
@@ -35,6 +36,7 @@ src/
 
 - **Schema**: Each vault has `.ovault/schema.json` defining types, enums, and dynamic sources
 - **Types**: Hierarchical (e.g., `objective/task`) with frontmatter definitions
+- **Templates**: Reusable note templates in `Templates/{type}/{subtype}/*.md` with defaults and body structure
 - **Dynamic sources**: Query vault files for field values (e.g., active milestones)
 - **Wikilinks**: `[[Note]]` or `"[[Note]]"` format for Obsidian linking
 

@@ -54,6 +54,11 @@ ovault --vault=/path/to/vault new
 ovault new objective    # Then select subtype (task/milestone/project/goal)
 ovault new idea         # Creates idea directly (no subtypes)
 
+# Templates
+ovault new task --template bug-report  # Use specific template
+ovault new task --default              # Use default.md template  
+ovault new task --no-template          # Skip templates, use schema only
+
 # Edit existing file
 ovault edit path/to/file.md
 ovault edit Objectives/Tasks/My\ Task.md
@@ -230,6 +235,99 @@ Define document structure after frontmatter:
 ```
 
 Content types: `none`, `paragraphs`, `bullets`, `checkboxes`
+
+## Templates
+
+Templates provide reusable defaults and body structure for note creation. They're stored in the vault's `Templates/` directory, organized by type path.
+
+### Template Location
+
+```
+my-vault/
+└── Templates/
+    ├── idea/
+    │   └── default.md           # Default template for ideas
+    └── objective/
+        └── task/
+            ├── default.md       # Default template for tasks
+            └── bug-report.md    # Bug report template
+```
+
+### Template Format
+
+Templates are markdown files with special frontmatter:
+
+```yaml
+---
+type: template
+template-for: objective/task
+description: Bug report with reproduction steps
+defaults:
+  status: backlog
+  priority: high
+prompt-fields:
+  - deadline
+---
+
+## Description
+
+[Describe the bug]
+
+## Steps to Reproduce
+
+1. 
+2. 
+3. 
+
+## Expected Behavior
+
+## Actual Behavior
+```
+
+### Template Properties
+
+| Property | Required | Description |
+|----------|----------|-------------|
+| `type` | Yes | Must be `template` |
+| `template-for` | Yes | Type path (e.g., `objective/task`) |
+| `description` | No | Human-readable description |
+| `defaults` | No | Default field values (skip prompting) |
+| `prompt-fields` | No | Fields to always prompt for, even with defaults |
+| `filename-pattern` | No | Override default filename |
+
+### Template Body
+
+The template body becomes the note body, with variable substitution:
+- `{fieldName}` - Replaced with frontmatter value
+- `{date}` - Today's date (YYYY-MM-DD)
+- `{date:FORMAT}` - Formatted date (e.g., `{date:YYYY-MM}`)
+
+### CLI Usage
+
+```sh
+# Auto-use default.md if it exists
+ovault new task
+
+# Use specific template
+ovault new task --template bug-report
+
+# Require default template (error if not found)
+ovault new task --default
+
+# Skip template system
+ovault new task --no-template
+
+# JSON mode with templates
+ovault new task --json '{"Task name": "Fix bug"}' --template bug-report
+```
+
+### Template Discovery
+
+Templates use **strict matching** - only templates in the exact type path directory are considered:
+- `objective/task` → `Templates/objective/task/*.md`
+- `idea` → `Templates/idea/*.md`
+
+There is no inheritance from parent types.
 
 ## Adding a New Type
 

@@ -140,3 +140,45 @@ export type Schema = z.infer<typeof OvaultSchema>;
 
 // Type definition union (either a full Type or a Subtype)
 export type TypeDef = Type | Subtype;
+
+// ============================================================================
+// Template Types
+// ============================================================================
+
+/**
+ * Template frontmatter schema.
+ * Templates are markdown files with special frontmatter that define defaults,
+ * body structure, and other properties for note creation.
+ */
+export const TemplateFrontmatterSchema = z.object({
+  type: z.literal('template'),
+  'template-for': z.string(), // Type path (e.g., "objective/task")
+  description: z.string().optional(),
+  defaults: z.record(z.unknown()).optional(),
+  'prompt-fields': z.array(z.string()).optional(),
+  'filename-pattern': z.string().optional(),
+});
+
+export type TemplateFrontmatter = z.infer<typeof TemplateFrontmatterSchema>;
+
+/**
+ * Parsed template with all relevant data.
+ */
+export interface Template {
+  /** Full file path to the template */
+  path: string;
+  /** Template name (filename without .md) */
+  name: string;
+  /** Type path this template is for (e.g., "objective/task") */
+  templateFor: string;
+  /** Human-readable description */
+  description?: string;
+  /** Default field values */
+  defaults?: Record<string, unknown>;
+  /** Fields to always prompt for, even with defaults */
+  promptFields?: string[];
+  /** Override filename pattern */
+  filenamePattern?: string;
+  /** Template body content (markdown after frontmatter) */
+  body: string;
+}

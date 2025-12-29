@@ -84,6 +84,9 @@ export const TEST_SCHEMA = {
       frontmatter_order: ['type', 'status', 'priority'],
     },
   },
+  audit: {
+    ignored_directories: ['Templates'],
+  },
 };
 
 export async function createTestVault(): Promise<string> {
@@ -154,6 +157,83 @@ type: objective
 objective-type: milestone
 status: settled
 ---
+`
+  );
+
+  // Create template directories and sample templates
+  await mkdir(join(vaultDir, 'Templates/idea'), { recursive: true });
+  await mkdir(join(vaultDir, 'Templates/objective/task'), { recursive: true });
+
+  await writeFile(
+    join(vaultDir, 'Templates/idea', 'default.md'),
+    `---
+type: template
+template-for: idea
+description: Default idea template
+defaults:
+  status: raw
+  priority: medium
+---
+
+# {title}
+
+## Description
+
+[Describe your idea here]
+
+## Why This Matters
+
+## Next Steps
+
+- [ ] 
+`
+  );
+
+  await writeFile(
+    join(vaultDir, 'Templates/objective/task', 'default.md'),
+    `---
+type: template
+template-for: objective/task
+description: Default task template
+defaults:
+  status: backlog
+---
+
+## Steps
+
+- [ ] 
+
+## Notes
+
+`
+  );
+
+  await writeFile(
+    join(vaultDir, 'Templates/objective/task', 'bug-report.md'),
+    `---
+type: template
+template-for: objective/task
+description: Bug report with reproduction steps
+defaults:
+  status: backlog
+prompt-fields:
+  - deadline
+---
+
+## Description
+
+[Describe the bug]
+
+## Steps to Reproduce
+
+1. 
+2. 
+3. 
+
+## Expected Behavior
+
+## Actual Behavior
+
 `
   );
 

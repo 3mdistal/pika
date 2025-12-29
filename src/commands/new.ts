@@ -49,7 +49,13 @@ import {
   jsonError,
   ExitCodes,
 } from '../lib/output.js';
-import type { Schema, TypeDef, Field, BodySection } from '../types/schema.js';
+import {
+  resolveTemplate,
+  findTemplateByName,
+  findDefaultTemplate,
+  processTemplateBody,
+} from '../lib/template.js';
+import type { Schema, TypeDef, Field, BodySection, Template } from '../types/schema.js';
 
 /**
  * Error thrown when user cancels an interactive prompt (Ctrl+C/Escape).
@@ -67,6 +73,9 @@ interface NewCommandOptions {
   open?: boolean;
   json?: string;
   instance?: string;
+  template?: string;
+  default?: boolean;
+  noTemplate?: boolean;
 }
 
 export const newCommand = new Command('new')
@@ -75,6 +84,9 @@ export const newCommand = new Command('new')
   .option('--open', 'Open the note after creation (uses OVAULT_DEFAULT_APP or Obsidian)')
   .option('--json <frontmatter>', 'Create note non-interactively with JSON frontmatter')
   .option('--instance <name>', 'Parent instance name (for instance-grouped subtypes)')
+  .option('--template <name>', 'Use a specific template')
+  .option('--default', 'Use the default template for the type')
+  .option('--no-template', 'Skip template selection, use schema only')
   .addHelpText('after', `
 Examples:
   ovault new                    # Interactive type selection
@@ -82,10 +94,20 @@ Examples:
   ovault new objective/task     # Create a task
   ovault new draft --open       # Create and open (respects OVAULT_DEFAULT_APP)
 
+Templates:
+  ovault new task --template bug-report  # Use specific template
+  ovault new task --default              # Use default.md template
+  ovault new task --no-template          # Skip templates, use schema only
+
 Non-interactive (JSON) mode:
   ovault new idea --json '{"Name": "My Idea", "status": "raw"}'
   ovault new objective/task --json '{"Name": "Fix bug", "status": "in-progress"}'
-  ovault new draft/version --instance "My Project" --json '{"Name": "v1"}'
+  ovault new task --json '{"Name": "Bug"}' --template bug-report
+
+Template Discovery:
+  Templates are stored in Templates/{type}/{subtype}/*.md
+  If default.md exists, it's used automatically (unless --no-template).
+  If multiple templates exist without default.md, you'll be prompted to select.
 
 For instance-grouped types (like drafts), you'll be prompted to select
 or create a parent instance folder.`)
@@ -105,12 +127,33 @@ or create a parent instance folder.`)
           process.exit(ExitCodes.VALIDATION_ERROR);
         }
 
+        // Resolve template for JSON mode
+        let template: Template | null = null;
+        if (!options.noTemplate) {
+          if (options.template) {
+            template = await findTemplateByName(vaultDir, typePath, options.template);
+            if (!template) {
+              printJson(jsonError(`Template not found: ${options.template}`));
+              process.exit(ExitCodes.VALIDATION_ERROR);
+            }
+          } else if (options.default) {
+            template = await findDefaultTemplate(vaultDir, typePath);
+            if (!template) {
+              printJson(jsonError(`No default template found for type: ${typePath}`));
+              process.exit(ExitCodes.VALIDATION_ERROR);
+            }
+          }
+          // Note: In JSON mode without explicit --template or --default, 
+          // we don't auto-select templates (explicit is better for automation)
+        }
+
         const filePath = await createNoteFromJson(
           schema,
           vaultDir,
           typePath,
           options.json!,
-          options.instance
+          options.instance,
+          template
         );
         
         printJson(jsonSuccess({ path: relative(vaultDir, filePath) }));
@@ -136,7 +179,49 @@ or create a parent instance folder.`)
         process.exit(1);
       }
 
-      const filePath = await createNote(schema, vaultDir, resolvedPath, typeDef);
+      // Resolve template for interactive mode
+      let template: Template | null = null;
+      if (!options.noTemplate) {
+        if (options.template) {
+          // --template <name>: Find specific template
+          template = await findTemplateByName(vaultDir, resolvedPath, options.template);
+          if (!template) {
+            printError(`Template not found: ${options.template}`);
+            process.exit(1);
+          }
+        } else if (options.default) {
+          // --default: Find default.md
+          template = await findDefaultTemplate(vaultDir, resolvedPath);
+          if (!template) {
+            printError(`No default template found for type: ${resolvedPath}`);
+            process.exit(1);
+          }
+        } else {
+          // No flags: Auto-discover templates
+          const resolution = await resolveTemplate(vaultDir, resolvedPath, {});
+          template = resolution.template;
+          
+          if (resolution.shouldPrompt && resolution.availableTemplates.length > 0) {
+            // Multiple templates, no default - prompt user
+            const templateOptions = [
+              ...resolution.availableTemplates.map(t => 
+                t.description ? `${t.name} - ${t.description}` : t.name
+              ),
+              '[No template]'
+            ];
+            const selected = await promptSelection('Select template:', templateOptions);
+            if (selected === null) {
+              throw new UserCancelledError();
+            }
+            if (!selected.startsWith('[No template]')) {
+              const selectedName = selected.split(' - ')[0];
+              template = resolution.availableTemplates.find(t => t.name === selectedName) ?? null;
+            }
+          }
+        }
+      }
+
+      const filePath = await createNote(schema, vaultDir, resolvedPath, typeDef, template);
 
       // Open if requested (respects OVAULT_DEFAULT_APP)
       if (options.open && filePath) {
@@ -168,7 +253,8 @@ async function createNoteFromJson(
   vaultDir: string,
   typePath: string,
   jsonInput: string,
-  instanceName?: string
+  instanceName?: string,
+  template?: Template | null
 ): Promise<string> {
   // Parse JSON input
   let inputData: Record<string, unknown>;
@@ -187,8 +273,15 @@ async function createNoteFromJson(
     process.exit(ExitCodes.VALIDATION_ERROR);
   }
 
+  // Apply template defaults first, then JSON input overrides them
+  let mergedInput = { ...inputData };
+  if (template?.defaults) {
+    // Template defaults are base, JSON input takes precedence
+    mergedInput = { ...template.defaults, ...inputData };
+  }
+
   // Validate and apply defaults
-  const validation = validateFrontmatter(schema, typePath, inputData);
+  const validation = validateFrontmatter(schema, typePath, mergedInput);
   if (!validation.valid) {
     // Convert validation result to JSON error format
     printJson({
@@ -205,8 +298,8 @@ async function createNoteFromJson(
     process.exit(ExitCodes.VALIDATION_ERROR);
   }
 
-  // Apply defaults for missing fields
-  const frontmatter = applyDefaults(schema, typePath, inputData);
+  // Apply schema defaults for missing fields
+  const frontmatter = applyDefaults(schema, typePath, mergedInput);
 
   // Get the name from the frontmatter
   const nameField = typeDef.name_field ?? 'Name';
@@ -231,7 +324,8 @@ async function createNoteFromJson(
       typePath,
       typeDef,
       frontmatter,
-      instanceName
+      instanceName,
+      template
     );
   } else if (dirMode === 'instance-grouped' && segments.length === 1) {
     // Instance-grouped parent
@@ -241,7 +335,8 @@ async function createNoteFromJson(
       typePath,
       typeDef,
       frontmatter,
-      itemName
+      itemName,
+      template
     );
   } else {
     // Pooled mode
@@ -251,7 +346,8 @@ async function createNoteFromJson(
       typePath,
       typeDef,
       frontmatter,
-      itemName
+      itemName,
+      template
     );
   }
 
@@ -267,7 +363,8 @@ async function createPooledNoteFromJson(
   typePath: string,
   typeDef: TypeDef,
   frontmatter: Record<string, unknown>,
-  itemName: string
+  itemName: string,
+  template?: Template | null
 ): Promise<string> {
   const outputDir = getOutputDirForType(schema, typePath);
   if (!outputDir) {
@@ -283,8 +380,14 @@ async function createPooledNoteFromJson(
     process.exit(ExitCodes.IO_ERROR);
   }
 
-  // Generate body from body_sections
-  const body = generateBodyFromSections(typeDef.body_sections);
+  // Generate body - prefer template body, fall back to schema body_sections
+  let body: string;
+  if (template?.body) {
+    body = processTemplateBody(template.body, frontmatter);
+  } else {
+    body = generateBodyFromSections(typeDef.body_sections);
+  }
+  
   const fieldOrder = getFrontmatterOrder(typeDef);
   const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(frontmatter);
 
@@ -301,7 +404,8 @@ async function createInstanceParentFromJson(
   typePath: string,
   typeDef: TypeDef,
   frontmatter: Record<string, unknown>,
-  instanceName: string
+  instanceName: string,
+  template?: Template | null
 ): Promise<string> {
   const outputDir = getOutputDir(schema, typePath);
   if (!outputDir) {
@@ -317,7 +421,14 @@ async function createInstanceParentFromJson(
     process.exit(ExitCodes.IO_ERROR);
   }
 
-  const body = generateBodyFromSections(typeDef.body_sections);
+  // Generate body - prefer template body, fall back to schema body_sections
+  let body: string;
+  if (template?.body) {
+    body = processTemplateBody(template.body, frontmatter);
+  } else {
+    body = generateBodyFromSections(typeDef.body_sections);
+  }
+  
   const fieldOrder = getFrontmatterOrder(typeDef);
   const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(frontmatter);
 
@@ -334,7 +445,8 @@ async function createInstanceGroupedNoteFromJson(
   typePath: string,
   typeDef: TypeDef,
   frontmatter: Record<string, unknown>,
-  instanceName?: string
+  instanceName?: string,
+  template?: Template | null
 ): Promise<string> {
   const parentTypeName = getParentTypeName(schema, typePath);
   if (!parentTypeName) {
@@ -379,7 +491,14 @@ async function createInstanceGroupedNoteFromJson(
   // Remove _instance from frontmatter before writing
   const { _instance, ...cleanFrontmatter } = frontmatter;
 
-  const body = generateBodyFromSections(typeDef.body_sections);
+  // Generate body - prefer template body, fall back to schema body_sections
+  let body: string;
+  if (template?.body) {
+    body = processTemplateBody(template.body, cleanFrontmatter);
+  } else {
+    body = generateBodyFromSections(typeDef.body_sections);
+  }
+  
   const fieldOrder = getFrontmatterOrder(typeDef);
   const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(cleanFrontmatter);
 
@@ -443,7 +562,8 @@ async function createNote(
   schema: Schema,
   vaultDir: string,
   typePath: string,
-  typeDef: TypeDef
+  typeDef: TypeDef,
+  template?: Template | null
 ): Promise<string> {
   const segments = typePath.split('/');
   const typeName = segments[0] ?? typePath;
@@ -451,19 +571,24 @@ async function createNote(
   const isSubtype = isInstanceGroupedSubtype(schema, typePath);
 
   printInfo(`\n=== New ${typeName} ===`);
+  
+  // Show template info if using one
+  if (template) {
+    printInfo(`Using template: ${template.name}${template.description ? ` - ${template.description}` : ''}`);
+  }
 
   // Handle instance-grouped subtypes differently
   if (dirMode === 'instance-grouped' && isSubtype) {
-    return await createInstanceGroupedNote(schema, vaultDir, typePath, typeDef);
+    return await createInstanceGroupedNote(schema, vaultDir, typePath, typeDef, template);
   }
 
   // Handle instance-grouped parent types (creating new instance)
   if (dirMode === 'instance-grouped' && segments.length === 1) {
-    return await createInstanceParent(schema, vaultDir, typePath, typeDef);
+    return await createInstanceParent(schema, vaultDir, typePath, typeDef, template);
   }
 
   // Standard pooled mode
-  return await createPooledNote(schema, vaultDir, typePath, typeDef);
+  return await createPooledNote(schema, vaultDir, typePath, typeDef, template);
 }
 
 /**
@@ -473,7 +598,8 @@ async function createPooledNote(
   schema: Schema,
   vaultDir: string,
   typePath: string,
-  typeDef: TypeDef
+  typeDef: TypeDef,
+  template?: Template | null
 ): Promise<string> {
   // Get output directory
   const outputDir = getOutputDirForType(schema, typePath);
@@ -491,7 +617,7 @@ async function createPooledNote(
   }
 
   // Build frontmatter and body (may throw UserCancelledError)
-  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef);
+  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef, template);
 
   // Create file
   const filePath = join(fullOutputDir, `${itemName}.md`);
@@ -520,7 +646,8 @@ async function createInstanceParent(
   schema: Schema,
   vaultDir: string,
   typePath: string,
-  typeDef: TypeDef
+  typeDef: TypeDef,
+  template?: Template | null
 ): Promise<string> {
   // Get output directory (e.g., "Drafts")
   const outputDir = getOutputDir(schema, typePath);
@@ -537,7 +664,7 @@ async function createInstanceParent(
   }
 
   // Build frontmatter and body BEFORE creating folder (may throw UserCancelledError)
-  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef);
+  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef, template);
 
   // Check if instance already exists BEFORE creating folder
   const filePath = getParentNotePath(vaultDir, outputDir, instanceName);
@@ -569,7 +696,8 @@ async function createInstanceGroupedNote(
   schema: Schema,
   vaultDir: string,
   typePath: string,
-  typeDef: TypeDef
+  typeDef: TypeDef,
+  template?: Template | null
 ): Promise<string> {
   const parentTypeName = getParentTypeName(schema, typePath);
   if (!parentTypeName) {
@@ -627,7 +755,7 @@ async function createInstanceGroupedNote(
   }
 
   // Build frontmatter and body BEFORE creating any folders (may throw UserCancelledError)
-  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef);
+  const { frontmatter, body, orderedFields } = await buildNoteContent(schema, vaultDir, typePath, typeDef, template);
 
   // Now that all prompts have succeeded, create folder if needed
   if (needsNewInstance) {
@@ -663,33 +791,59 @@ async function createInstanceGroupedNote(
 
 /**
  * Build frontmatter and body content for a note.
+ * 
+ * When a template is provided:
+ * - Template defaults are used for fields (skip prompting)
+ * - Fields in template.promptFields are still prompted
+ * - Template body is used instead of schema body_sections
  */
 async function buildNoteContent(
   schema: Schema,
   vaultDir: string,
   typePath: string,
-  typeDef: TypeDef
+  typeDef: TypeDef,
+  template?: Template | null
 ): Promise<{ frontmatter: Record<string, unknown>; body: string; orderedFields: string[] }> {
   const frontmatter: Record<string, unknown> = {};
   const fields = getFieldsForType(schema, typePath);
   const fieldOrder = getFrontmatterOrder(typeDef);
   const orderedFields = fieldOrder.length > 0 ? fieldOrder : Object.keys(fields);
 
+  // Get template defaults and prompt-fields
+  const templateDefaults = template?.defaults ?? {};
+  const promptFields = new Set(template?.promptFields ?? []);
+
   for (const fieldName of orderedFields) {
     const field = fields[fieldName];
     if (!field) continue;
 
-    const value = await promptField(schema, vaultDir, fieldName, field);
-    if (value !== undefined && value !== '') {
-      frontmatter[fieldName] = value;
+    // Check if template provides a default for this field
+    const templateDefault = templateDefaults[fieldName];
+    const hasTemplateDefault = templateDefault !== undefined;
+    const shouldPrompt = !hasTemplateDefault || promptFields.has(fieldName);
+
+    if (hasTemplateDefault && !shouldPrompt) {
+      // Use template default without prompting
+      frontmatter[fieldName] = templateDefault;
+    } else {
+      // Prompt as normal
+      const value = await promptField(schema, vaultDir, fieldName, field);
+      if (value !== undefined && value !== '') {
+        frontmatter[fieldName] = value;
+      }
     }
   }
 
+  // Generate body - prefer template body, fall back to schema body_sections
   let body = '';
-  const bodySections = typeDef.body_sections;
-  if (bodySections && bodySections.length > 0) {
-    const sectionContent = await promptBodySections(bodySections);
-    body = generateBodyWithContent(bodySections, sectionContent);
+  if (template?.body) {
+    body = processTemplateBody(template.body, frontmatter);
+  } else {
+    const bodySections = typeDef.body_sections;
+    if (bodySections && bodySections.length > 0) {
+      const sectionContent = await promptBodySections(bodySections);
+      body = generateBodyWithContent(bodySections, sectionContent);
+    }
   }
 
   return { frontmatter, body, orderedFields };

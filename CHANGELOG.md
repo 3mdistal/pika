@@ -8,6 +8,17 @@ Complete rewrite from shell scripts to TypeScript with significant new features.
 
 ### Added
 
+- **Template system** (`new` command)
+  - Templates in `Templates/{type}/{subtype}/*.md`
+  - Auto-use `default.md` template when present
+  - `--template <name>` to use specific template
+  - `--default` to require default template
+  - `--no-template` to skip template system
+  - Template defaults skip prompting for those fields
+  - `prompt-fields` to force prompting even with defaults
+  - Template body with `{field}` and `{date}` substitution
+  - Full JSON mode support for automation
+
 - **Navigation commands** (`open`, `link`)
   - `ovault open [query]` - Open notes in Obsidian, editor, or system default
   - `ovault link [query]` - Generate wikilinks with shortest unambiguous form
