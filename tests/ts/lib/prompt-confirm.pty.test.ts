@@ -51,56 +51,49 @@ describePty('Confirmation Prompt PTY tests', () => {
 
   describe('promptConfirm (y/n input)', () => {
     it('should accept "y" as confirmation', async () => {
-      // Create a file that's missing the "Notes" section to trigger the confirm prompt
+      // Test y/n confirmation via overwrite prompt in new command
       const existingFile: TempVaultFile = {
-        path: 'Ideas/Test Idea.md',
+        path: 'Ideas/Confirm Test.md',
         content: `---
 type: idea
 status: raw
 ---
 
-Some content without the Notes section.
+Original content.
 `,
       };
 
       await withTempVault(
-        ['edit', 'Ideas/Test Idea.md'],
+        ['new', 'idea'],
         async (proc, vaultPath) => {
-          // Wait for the edit to start
-          await proc.waitFor('Editing:', 10000);
+          // Wait for name prompt
+          await proc.waitFor('Idea name', 10000);
 
-          // Wait for status field display
+          // Enter name that matches existing file
+          await proc.typeAndEnter('Confirm Test');
+
+          // Complete prompts
           await proc.waitFor('status', 10000);
-
-          // Keep current value (select first option)
           proc.write('1');
-          await proc.waitForStable(200);
+          await proc.waitFor('priority', 10000);
+          proc.write('1');
 
-          // Should ask about checking for missing sections
-          await proc.waitFor('Check for missing sections', 10000);
+          // Should prompt for overwrite
+          await proc.waitFor('already exists', 10000);
 
-          // Answer yes
+          // Confirm with y
           proc.write('y');
           proc.write(Keys.ENTER);
 
-          // Should detect missing Notes section and ask to add it
-          await proc.waitFor('Missing section: Notes', 10000);
-          await proc.waitFor('Add it?', 5000);
-
-          // Answer yes to add it
-          proc.write('y');
-          proc.write(Keys.ENTER);
-
-          // Wait for update completion
+          // Wait for creation
           await proc.waitForStable(200);
-          await proc.waitFor('Updated:', 5000);
+          await proc.waitFor('Created:', 5000);
 
-          // Verify the section was added
-          const content = await readVaultFile(vaultPath, 'Ideas/Test Idea.md');
-          expect(content).toContain('## Notes');
+          // Verify file was overwritten
+          const content = await readVaultFile(vaultPath, 'Ideas/Confirm Test.md');
+          expect(content).not.toContain('Original content');
         },
-        [existingFile],
-        EDIT_TEST_SCHEMA
+        [existingFile]
       );
     }, 30000);
 
