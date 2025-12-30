@@ -342,6 +342,36 @@ status: backlog
       }
     });
 
+    it('should filter results with simple --field=value syntax', async () => {
+      const result = await runCLI([
+        'search', 'status', '--text', '--type', 'idea',
+        '--status=raw',
+        '--no-context'
+      ], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      // Should only match Sample Idea (which has status: raw)
+      if (result.stdout.trim()) {
+        expect(result.stdout).toContain('Sample Idea');
+        expect(result.stdout).not.toContain('Another Idea');
+      }
+    });
+
+    it('should filter results with negation --field!=value syntax', async () => {
+      const result = await runCLI([
+        'search', 'status', '--text', '--type', 'idea',
+        '--status!=raw',
+        '--no-context'
+      ], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      // Should only match Another Idea (which has status: backlog)
+      if (result.stdout.trim()) {
+        expect(result.stdout).toContain('Another Idea');
+        expect(result.stdout).not.toContain('Sample Idea');
+      }
+    });
+
     it('should return empty for no matches', async () => {
       const result = await runCLI(['search', 'xyznonexistent123', '--text'], vaultDir);
 

@@ -30,6 +30,7 @@ import {
 } from '../lib/content-search.js';
 import { parseNote } from '../lib/frontmatter.js';
 import { matchesExpression, type EvalContext } from '../lib/expression.js';
+import { parseFilters, matchesAllFilters, type Filter } from '../lib/query.js';
 
 // ============================================================================
 // Types
@@ -83,6 +84,7 @@ export const searchCommand = new Command('search')
   .option('-S, --case-sensitive', 'Case-sensitive search (default: case-insensitive)')
   .option('-E, --regex', 'Treat pattern as regex (default: literal)')
   .option('-l, --limit <count>', 'Maximum files to return (default: 100)')
+  .allowUnknownOption(true)
   .addHelpText('after', `
 Name Search (default):
   Searches by note name, basename, or path.
@@ -112,6 +114,13 @@ Content Search (--text):
     -E, --regex          Treat pattern as regex
     -l, --limit <n>      Max files to return (default: 100)
 
+  Simple Filters (same as list command):
+    --field=value        Include where field equals value
+    --field=a,b          Include where field equals a OR b
+    --field!=value       Exclude where field equals value
+    --field=             Include where field is empty/missing
+    --field!=            Include where field exists
+
 Examples:
   # Name search
   ovault search "My Note"                    # Find by name
@@ -120,7 +129,8 @@ Examples:
   # Content search
   ovault search "deploy" --text              # Search all notes for "deploy"
   ovault search "deploy" -t --type task      # Search only in tasks
-  ovault search "TODO" -t --where "status != 'done'"  # Filter by frontmatter
+  ovault search "TODO" -t --status!=done     # Simple filter syntax
+  ovault search "TODO" -t --where "status != 'done'"  # Expression filter
   ovault search "error.*log" -t --regex      # Regex search
   ovault search "deploy" -t --output json    # JSON output with matches
   
@@ -136,7 +146,7 @@ Examples:
 
       // Dispatch to appropriate search mode
       if (options.text) {
-        await handleContentSearch(query, options, vaultDir, schema, jsonMode);
+        await handleContentSearch(query, options, vaultDir, schema, jsonMode, cmd);
       } else {
         await handleNameSearch(query, options, vaultDir, schema, jsonMode, cmd);
       }
@@ -160,7 +170,8 @@ async function handleContentSearch(
   options: SearchOptions,
   vaultDir: string,
   schema: import('../types/schema.js').Schema,
-  jsonMode: boolean
+  jsonMode: boolean,
+  cmd: Command
 ): Promise<void> {
   // Validate query is provided for content search
   if (!query) {
@@ -191,6 +202,10 @@ async function handleContentSearch(
   const contextLines = options.noContext ? 0 : parseInt(options.context ?? '2', 10);
   const limit = parseInt(options.limit ?? '100', 10);
 
+  // Parse simple filters from remaining arguments (e.g., --status=done)
+  const filterArgs = cmd.args.slice(1); // Skip the query argument
+  const simpleFilters = parseFilters(filterArgs);
+
   // Run content search
   const searchResult = await searchContent({
     pattern: query,
@@ -212,12 +227,14 @@ async function handleContentSearch(
     process.exit(1);
   }
 
-  // Apply frontmatter filters if specified
+  // Apply frontmatter filters if specified (simple filters and/or --where expressions)
   let filteredResults = searchResult.results;
-  if (options.where && options.where.length > 0) {
+  const hasFilters = simpleFilters.length > 0 || (options.where && options.where.length > 0);
+  if (hasFilters) {
     filteredResults = await filterByFrontmatter(
       searchResult.results,
-      options.where,
+      options.where ?? [],
+      simpleFilters,
       vaultDir,
       jsonMode
     );
@@ -277,11 +294,12 @@ async function handleContentSearch(
 }
 
 /**
- * Filter content search results by frontmatter expressions.
+ * Filter content search results by frontmatter (simple filters and/or expressions).
  */
 async function filterByFrontmatter(
   results: ContentMatch[],
   whereExpressions: string[],
+  simpleFilters: Filter[],
   vaultDir: string,
   jsonMode: boolean
 ): Promise<ContentMatch[]> {
@@ -290,22 +308,32 @@ async function filterByFrontmatter(
   for (const result of results) {
     try {
       const { frontmatter } = await parseNote(result.file.path);
-      const context = await buildEvalContext(result.file.path, vaultDir, frontmatter);
 
-      const allMatch = whereExpressions.every(expr => {
-        try {
-          return matchesExpression(expr, context);
-        } catch (e) {
-          if (!jsonMode) {
-            printError(`Expression error in "${expr}": ${(e as Error).message}`);
-          }
-          return false;
-        }
-      });
-
-      if (allMatch) {
-        filtered.push(result);
+      // Apply simple filters first (--field=value style)
+      if (!matchesAllFilters(frontmatter, simpleFilters)) {
+        continue;
       }
+
+      // Apply expression filters (--where style)
+      if (whereExpressions.length > 0) {
+        const context = await buildEvalContext(result.file.path, vaultDir, frontmatter);
+        const allMatch = whereExpressions.every(expr => {
+          try {
+            return matchesExpression(expr, context);
+          } catch (e) {
+            if (!jsonMode) {
+              printError(`Expression error in "${expr}": ${(e as Error).message}`);
+            }
+            return false;
+          }
+        });
+
+        if (!allMatch) {
+          continue;
+        }
+      }
+
+      filtered.push(result);
     } catch {
       // Skip files that can't be parsed
     }

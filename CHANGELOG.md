@@ -19,13 +19,14 @@ All notable changes to ovault are documented in this file.
   - New `--text` / `-t` flag enables searching inside file contents using ripgrep
   - `--type <type>` restricts search to specific types (e.g., `--type task`)
   - `--where <expr>` filters results by frontmatter expressions
+  - Simple filters (`--field=value`, `--field!=value`) for consistency with `list` command
   - `-C, --context <n>` controls context lines shown around matches (default: 2)
   - `--no-context` hides context lines
   - `-S, --case-sensitive` for case-sensitive matching (default: case-insensitive)
   - `-E, --regex` treats pattern as regex (default: literal string)
   - `-l, --limit <n>` caps maximum files returned (default: 100)
   - JSON output includes match details with line numbers and context
-  - Example: `ovault search "deploy" --text --type task --where "status != 'done'"`
+  - Example: `ovault search "deploy" --text --type task --status!=done`
 
 - **New `search` command output formats** (ovault-boe)
   - `--wikilink` - Output `[[Name]]` format for Obsidian links
