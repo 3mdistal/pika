@@ -1,5 +1,7 @@
 import type { Schema } from '../types/schema.js';
 import { getAllFieldsForType, getEnumForField, getEnumValues } from './schema.js';
+import { matchesExpression, buildEvalContext } from './expression.js';
+import { printError } from './prompt.js';
 
 export interface Filter {
   field: string;
@@ -177,4 +179,74 @@ export function validateFilters(
     valid: errors.length === 0,
     errors,
   };
+}
+
+/**
+ * Options for applyFrontmatterFilters.
+ */
+export interface FrontmatterFilterOptions {
+  /** Simple field=value filters */
+  filters: Filter[];
+  /** Expression-based filters (--where) */
+  whereExpressions: string[];
+  /** Vault directory for building eval context */
+  vaultDir: string;
+  /** Whether to suppress error output (for JSON mode) */
+  silent?: boolean;
+}
+
+/**
+ * A file with its parsed frontmatter.
+ */
+export interface FileWithFrontmatter {
+  path: string;
+  frontmatter: Record<string, unknown>;
+}
+
+/**
+ * Apply frontmatter filters to a list of files.
+ * 
+ * Filters files using both simple filters (--field=value) and 
+ * expression filters (--where). Returns only files that match all criteria.
+ * 
+ * @param files - Array of objects with path and frontmatter
+ * @param options - Filter options
+ * @returns Filtered array of files
+ */
+export async function applyFrontmatterFilters<T extends FileWithFrontmatter>(
+  files: T[],
+  options: FrontmatterFilterOptions
+): Promise<T[]> {
+  const { filters, whereExpressions, vaultDir, silent = false } = options;
+  const result: T[] = [];
+
+  for (const file of files) {
+    // Apply simple filters first (--field=value style)
+    if (!matchesAllFilters(file.frontmatter, filters)) {
+      continue;
+    }
+
+    // Apply expression filters (--where style)
+    if (whereExpressions.length > 0) {
+      const context = await buildEvalContext(file.path, vaultDir, file.frontmatter);
+      const allMatch = whereExpressions.every(expr => {
+        try {
+          return matchesExpression(expr, context);
+        } catch (e) {
+          if (!silent) {
+            printError(`Expression error in "${expr}": ${(e as Error).message}`);
+          }
+          return false;
+        }
+      });
+
+      if (!allMatch) {
+        continue;
+      }
+    }
+
+    result.push(file);
+  }
+
+  return result;
 }

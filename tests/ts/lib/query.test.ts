@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { join } from 'path';
 import {
   parseFilters,
   matchesFilter,
@@ -6,6 +7,8 @@ import {
   validateFieldForType,
   validateFilterValues,
   validateFilters,
+  applyFrontmatterFilters,
+  type FileWithFrontmatter,
 } from '../../../src/lib/query.js';
 import { loadSchema } from '../../../src/lib/schema.js';
 import { createTestVault, cleanupTestVault } from '../fixtures/setup.js';
@@ -167,6 +170,168 @@ describe('query', () => {
       const result = validateFilters(schema, 'idea', filters);
       expect(result.valid).toBe(false);
       expect(result.errors.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('applyFrontmatterFilters', () => {
+    // Helper to create test files with frontmatter
+    const makeFiles = (data: Array<{ path: string; fm: Record<string, unknown> }>): FileWithFrontmatter[] =>
+      data.map(d => ({ path: join(vaultDir, d.path), frontmatter: d.fm }));
+
+    it('should filter by simple equality filter', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active' } },
+        { path: 'b.md', fm: { status: 'done' } },
+        { path: 'c.md', fm: { status: 'active' } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [{ field: 'status', operator: 'eq', values: ['active'] }],
+        whereExpressions: [],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result.map(f => f.frontmatter.status)).toEqual(['active', 'active']);
+    });
+
+    it('should filter by simple negation filter', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active' } },
+        { path: 'b.md', fm: { status: 'done' } },
+        { path: 'c.md', fm: { status: 'pending' } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [{ field: 'status', operator: 'neq', values: ['done'] }],
+        whereExpressions: [],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result.map(f => f.frontmatter.status)).toEqual(['active', 'pending']);
+    });
+
+    it('should filter by where expression', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { priority: 1 } },
+        { path: 'b.md', fm: { priority: 3 } },
+        { path: 'c.md', fm: { priority: 2 } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [],
+        whereExpressions: ['priority < 3'],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result.map(f => f.frontmatter.priority)).toEqual([1, 2]);
+    });
+
+    it('should combine simple filters and where expressions', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active', priority: 1 } },
+        { path: 'b.md', fm: { status: 'active', priority: 3 } },
+        { path: 'c.md', fm: { status: 'done', priority: 1 } },
+        { path: 'd.md', fm: { status: 'active', priority: 2 } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [{ field: 'status', operator: 'eq', values: ['active'] }],
+        whereExpressions: ['priority < 3'],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]?.frontmatter).toEqual({ status: 'active', priority: 1 });
+      expect(result[1]?.frontmatter).toEqual({ status: 'active', priority: 2 });
+    });
+
+    it('should apply multiple where expressions (ANDed)', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active', priority: 1 } },
+        { path: 'b.md', fm: { status: 'done', priority: 1 } },
+        { path: 'c.md', fm: { status: 'active', priority: 3 } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [],
+        whereExpressions: ["status == 'active'", 'priority < 2'],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.frontmatter).toEqual({ status: 'active', priority: 1 });
+    });
+
+    it('should return empty array when no files match', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'done' } },
+        { path: 'b.md', fm: { status: 'done' } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [{ field: 'status', operator: 'eq', values: ['active'] }],
+        whereExpressions: [],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(0);
+    });
+
+    it('should return all files when no filters are specified', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active' } },
+        { path: 'b.md', fm: { status: 'done' } },
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [],
+        whereExpressions: [],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(2);
+    });
+
+    it('should preserve original object references', async () => {
+      const originalFile = { path: join(vaultDir, 'a.md'), frontmatter: { status: 'active' } };
+      const files = [originalFile];
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [],
+        whereExpressions: [],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result[0]).toBe(originalFile);
+    });
+
+    it('should handle isEmpty function in expressions', async () => {
+      const files = makeFiles([
+        { path: 'a.md', fm: { status: 'active', deadline: '2025-01-15' } },
+        { path: 'b.md', fm: { status: 'active' } },  // no deadline
+        { path: 'c.md', fm: { status: 'done', deadline: '' } },  // empty deadline
+      ]);
+
+      const result = await applyFrontmatterFilters(files, {
+        filters: [],
+        whereExpressions: ['!isEmpty(deadline)'],
+        vaultDir,
+        silent: true,
+      });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.frontmatter.deadline).toBe('2025-01-15');
     });
   });
 });

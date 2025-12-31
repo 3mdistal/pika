@@ -81,6 +81,48 @@ export function matchesExpression(exprString: string, context: EvalContext): boo
   return Boolean(result);
 }
 
+/**
+ * Build evaluation context for expression filtering.
+ * Creates an EvalContext from a file path and its frontmatter.
+ */
+export async function buildEvalContext(
+  filePath: string,
+  vaultDir: string,
+  frontmatter: Record<string, unknown>
+): Promise<EvalContext> {
+  const { stat } = await import('fs/promises');
+  const { basename, dirname, relative } = await import('path');
+
+  const relativePath = relative(vaultDir, filePath);
+  const fileName = basename(filePath, '.md');
+  const folder = dirname(relativePath);
+
+  let fileInfo: EvalContext['file'] = {
+    name: fileName,
+    path: relativePath,
+    folder,
+    ext: '.md',
+  };
+
+  // Try to get file stats
+  try {
+    const stats = await stat(filePath);
+    fileInfo = {
+      ...fileInfo,
+      size: stats.size,
+      ctime: stats.birthtime,
+      mtime: stats.mtime,
+    };
+  } catch {
+    // Ignore stat errors
+  }
+
+  return {
+    frontmatter,
+    file: fileInfo,
+  };
+}
+
 // ============================================================================
 // Expression evaluators
 // ============================================================================
