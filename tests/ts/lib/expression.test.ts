@@ -1,11 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { join } from 'path';
+import { writeFile, mkdir } from 'fs/promises';
 import {
   parseExpression,
   evaluateExpression,
   matchesExpression,
   parseDuration,
+  buildEvalContext,
   type EvalContext,
 } from '../../../src/lib/expression.js';
+import { createTestVault, cleanupTestVault } from '../fixtures/setup.js';
 
 describe('expression', () => {
   const makeContext = (frontmatter: Record<string, unknown>): EvalContext => ({
@@ -178,6 +182,72 @@ describe('expression', () => {
         "status == 'done' && !isEmpty(tags)",
         ctx
       )).toBe(true);
+    });
+  });
+
+  describe('buildEvalContext', () => {
+    let vaultDir: string;
+    let testFilePath: string;
+
+    beforeAll(async () => {
+      vaultDir = await createTestVault();
+      // Create a test file for the buildEvalContext tests
+      const notesDir = join(vaultDir, 'Notes');
+      await mkdir(notesDir, { recursive: true });
+      testFilePath = join(notesDir, 'Test Note.md');
+      await writeFile(testFilePath, '---\nstatus: active\n---\nContent');
+    });
+
+    afterAll(async () => {
+      await cleanupTestVault(vaultDir);
+    });
+
+    it('should build context with file metadata', async () => {
+      const frontmatter = { status: 'active', priority: 1 };
+      const ctx = await buildEvalContext(testFilePath, vaultDir, frontmatter);
+
+      expect(ctx.frontmatter).toBe(frontmatter);
+      expect(ctx.file?.name).toBe('Test Note');
+      expect(ctx.file?.path).toBe('Notes/Test Note.md');
+      expect(ctx.file?.folder).toBe('Notes');
+      expect(ctx.file?.ext).toBe('.md');
+    });
+
+    it('should include file stats when file exists', async () => {
+      const ctx = await buildEvalContext(testFilePath, vaultDir, {});
+
+      expect(ctx.file?.size).toBeGreaterThan(0);
+      expect(ctx.file?.ctime).toBeInstanceOf(Date);
+      expect(ctx.file?.mtime).toBeInstanceOf(Date);
+    });
+
+    it('should handle non-existent files gracefully', async () => {
+      const nonExistentPath = join(vaultDir, 'Does Not Exist.md');
+      const ctx = await buildEvalContext(nonExistentPath, vaultDir, { test: true });
+
+      expect(ctx.frontmatter).toEqual({ test: true });
+      expect(ctx.file?.name).toBe('Does Not Exist');
+      expect(ctx.file?.path).toBe('Does Not Exist.md');
+      // Stats should be undefined for non-existent files
+      expect(ctx.file?.size).toBeUndefined();
+    });
+
+    it('should work with nested folders', async () => {
+      const nestedPath = join(vaultDir, 'Projects', 'Active', 'My Task.md');
+      const ctx = await buildEvalContext(nestedPath, vaultDir, {});
+
+      expect(ctx.file?.name).toBe('My Task');
+      expect(ctx.file?.path).toBe('Projects/Active/My Task.md');
+      expect(ctx.file?.folder).toBe('Projects/Active');
+    });
+
+    it('should produce context usable with matchesExpression', async () => {
+      const frontmatter = { status: 'done', priority: 1 };
+      const ctx = await buildEvalContext(testFilePath, vaultDir, frontmatter);
+
+      expect(matchesExpression("status == 'done'", ctx)).toBe(true);
+      expect(matchesExpression("priority < 3", ctx)).toBe(true);
+      expect(matchesExpression("file.folder == 'Notes'", ctx)).toBe(true);
     });
   });
 });

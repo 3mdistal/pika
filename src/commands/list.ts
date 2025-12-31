@@ -1,6 +1,5 @@
 import { Command } from 'commander';
-import { join, basename, relative, dirname } from 'path';
-import { stat } from 'fs/promises';
+import { join, basename, relative } from 'path';
 import Table from 'cli-table3';
 import {
   loadSchema,
@@ -11,8 +10,7 @@ import {
 } from '../lib/schema.js';
 import { parseNote } from '../lib/frontmatter.js';
 import { resolveVaultDir, listFilesInDir, getOutputDir } from '../lib/vault.js';
-import { parseFilters, matchesAllFilters, validateFilters } from '../lib/query.js';
-import { matchesExpression, type EvalContext } from '../lib/expression.js';
+import { parseFilters, validateFilters, applyFrontmatterFilters } from '../lib/query.js';
 import { printError } from '../lib/prompt.js';
 import {
   printJson,
@@ -176,38 +174,24 @@ async function listObjects(
   // Collect all files for this type
   const files = await collectFilesForType(schema, vaultDir, typePath);
 
-  // Apply filters
-  const filteredFiles: { path: string; frontmatter: Record<string, unknown> }[] = [];
+  // Parse frontmatter for all files
+  const filesWithFrontmatter: { path: string; frontmatter: Record<string, unknown> }[] = [];
   for (const file of files) {
     try {
       const { frontmatter } = await parseNote(file);
-
-      // Apply simple filters
-      if (!matchesAllFilters(frontmatter, options.filters)) {
-        continue;
-      }
-
-      // Apply expression filters
-      if (options.whereExpressions.length > 0) {
-        const context = await buildEvalContext(file, vaultDir, frontmatter);
-        const allMatch = options.whereExpressions.every(expr => {
-          try {
-            return matchesExpression(expr, context);
-          } catch (e) {
-            if (!options.jsonMode) {
-              printError(`Expression error in "${expr}": ${(e as Error).message}`);
-            }
-            return false;
-          }
-        });
-        if (!allMatch) continue;
-      }
-
-      filteredFiles.push({ path: file, frontmatter });
+      filesWithFrontmatter.push({ path: file, frontmatter });
     } catch {
       // Skip files that can't be parsed
     }
   }
+
+  // Apply filters using shared helper
+  const filteredFiles = await applyFrontmatterFilters(filesWithFrontmatter, {
+    filters: options.filters,
+    whereExpressions: options.whereExpressions,
+    vaultDir,
+    silent: options.jsonMode,
+  });
 
   // Sort by name
   filteredFiles.sort((a, b) => {
@@ -315,42 +299,4 @@ function formatValue(value: unknown): string {
     return value.join(', ');
   }
   return String(value);
-}
-
-/**
- * Build evaluation context for expression filtering.
- */
-async function buildEvalContext(
-  filePath: string,
-  vaultDir: string,
-  frontmatter: Record<string, unknown>
-): Promise<EvalContext> {
-  const relativePath = relative(vaultDir, filePath);
-  const fileName = basename(filePath, '.md');
-  const folder = dirname(relativePath);
-
-  let fileInfo: EvalContext['file'] = {
-    name: fileName,
-    path: relativePath,
-    folder,
-    ext: '.md',
-  };
-
-  // Try to get file stats
-  try {
-    const stats = await stat(filePath);
-    fileInfo = {
-      ...fileInfo,
-      size: stats.size,
-      ctime: stats.birthtime,
-      mtime: stats.mtime,
-    };
-  } catch {
-    // Ignore stat errors
-  }
-
-  return {
-    frontmatter,
-    file: fileInfo,
-  };
 }

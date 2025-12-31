@@ -8,8 +8,7 @@
 
 import { Command } from 'commander';
 import { readFile } from 'fs/promises';
-import { basename, dirname, relative } from 'path';
-import { stat } from 'fs/promises';
+import { basename } from 'path';
 import { resolveVaultDir } from '../lib/vault.js';
 import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
 import { printError } from '../lib/prompt.js';
@@ -26,11 +25,9 @@ import {
   formatResultsText,
   formatResultsJson,
   type ContentMatch,
-  type ContentSearchResult,
 } from '../lib/content-search.js';
 import { parseNote } from '../lib/frontmatter.js';
-import { matchesExpression, type EvalContext } from '../lib/expression.js';
-import { parseFilters, matchesAllFilters, type Filter } from '../lib/query.js';
+import { parseFilters, applyFrontmatterFilters, type Filter } from '../lib/query.js';
 
 // ============================================================================
 // Types
@@ -303,80 +300,36 @@ async function filterByFrontmatter(
   vaultDir: string,
   jsonMode: boolean
 ): Promise<ContentMatch[]> {
-  const filtered: ContentMatch[] = [];
+  // Parse frontmatter for each result and prepare for filtering
+  const resultsWithFrontmatter: Array<{
+    original: ContentMatch;
+    path: string;
+    frontmatter: Record<string, unknown>;
+  }> = [];
 
   for (const result of results) {
     try {
       const { frontmatter } = await parseNote(result.file.path);
-
-      // Apply simple filters first (--field=value style)
-      if (!matchesAllFilters(frontmatter, simpleFilters)) {
-        continue;
-      }
-
-      // Apply expression filters (--where style)
-      if (whereExpressions.length > 0) {
-        const context = await buildEvalContext(result.file.path, vaultDir, frontmatter);
-        const allMatch = whereExpressions.every(expr => {
-          try {
-            return matchesExpression(expr, context);
-          } catch (e) {
-            if (!jsonMode) {
-              printError(`Expression error in "${expr}": ${(e as Error).message}`);
-            }
-            return false;
-          }
-        });
-
-        if (!allMatch) {
-          continue;
-        }
-      }
-
-      filtered.push(result);
+      resultsWithFrontmatter.push({
+        original: result,
+        path: result.file.path,
+        frontmatter,
+      });
     } catch {
       // Skip files that can't be parsed
     }
   }
 
-  return filtered;
-}
+  // Apply filters using shared helper
+  const filtered = await applyFrontmatterFilters(resultsWithFrontmatter, {
+    filters: simpleFilters,
+    whereExpressions,
+    vaultDir,
+    silent: jsonMode,
+  });
 
-/**
- * Build evaluation context for expression filtering.
- */
-async function buildEvalContext(
-  filePath: string,
-  vaultDir: string,
-  frontmatter: Record<string, unknown>
-): Promise<EvalContext> {
-  const relativePath = relative(vaultDir, filePath);
-  const fileName = basename(filePath, '.md');
-  const folder = dirname(relativePath);
-
-  let fileInfo: EvalContext['file'] = {
-    name: fileName,
-    path: relativePath,
-    folder,
-    ext: '.md',
-  };
-
-  try {
-    const stats = await stat(filePath);
-    fileInfo = {
-      ...fileInfo,
-      size: stats.size,
-      ctime: stats.birthtime,
-      mtime: stats.mtime,
-    };
-  } catch {
-    // Ignore stat errors
-  }
-
-  return {
-    frontmatter,
-    file: fileInfo,
-  };
+  // Return the original ContentMatch objects
+  return filtered.map(f => f.original);
 }
 
 // ============================================================================
