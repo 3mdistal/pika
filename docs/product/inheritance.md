@@ -1,6 +1,6 @@
 # Pika Inheritance Model
 
-> Single inheritance + context relationships + colocation
+> Single inheritance + context relationships + ownership
 
 ---
 
@@ -10,7 +10,7 @@ Pika uses a simple, consistent model for organizing notes:
 
 1. **Inheritance** — What a note IS (determines fields)
 2. **Context** — What a note SUPPORTS (determines relationships)
-3. **Colocation** — Where a note LIVES (determined by context fields)
+3. **Ownership** — Whether a note is PRIVATE to its context (determines folder structure)
 
 These three concepts are orthogonal and compose cleanly.
 
@@ -201,24 +201,32 @@ Context fields can accept one or many values:
 
 ---
 
-## Colocation ("Lives With")
+## Ownership ("Belongs To")
 
-Colocation determines folder structure based on context relationships.
+Ownership determines whether notes are private to their context and where they live.
 
-### The `colocate` Property
+### The `owned` Property
 
-When a context field has `colocate: true`, the note lives in the same folder as its context:
+The **parent** declares ownership of its children using `owned: true` on a context field:
 
 ```json
 {
-  "research": {
-    "extends": "draft",
+  "draft": {
+    "extends": "meta",
     "fields": {
-      "for": {
+      "research": {
         "prompt": "dynamic",
-        "source": "draft",
+        "source": "research",
         "format": "wikilink",
-        "colocate": true
+        "multiple": true,
+        "owned": true
+      },
+      "related-research": {
+        "prompt": "dynamic",
+        "source": "research", 
+        "format": "wikilink",
+        "multiple": true,
+        "owned": false
       }
     }
   }
@@ -226,39 +234,52 @@ When a context field has `colocate: true`, the note lives in the same folder as 
 ```
 
 ```yaml
-type: research
-for: "[[My Novel]]"
+# My Novel.md
+type: draft
+research: ["[[Character Research]]", "[[World Building]]"]
+related-research: ["[[General Fantasy Tropes]]"]
 ```
 
-Lives at: `drafts/My Novel/research/Research Note.md`
+- `Character Research` and `World Building` are **owned** by My Novel
+  - They live in `drafts/My Novel/research/`
+  - No other note can reference them in any schema field
+- `General Fantasy Tropes` is **not owned**
+  - It lives in `research/` (its default location)
+  - Other drafts can also reference it
 
-### Colocation Rules
+### Ownership Rules
 
-1. **`colocate: true` requires single value** — Can't colocate with multiple parents
-2. **Creates subfolder by type** — Research goes in `parent-folder/research/`
-3. **Falls back to default** — If context field is empty, uses type's default folder
-4. **Nested colocation** — A colocated note can itself have colocated children
+1. **Ownership is declared by the parent** — The field with `owned: true` is on the parent, not the child
+2. **Owned notes are exclusive** — An owned note cannot be referenced by ANY schema field on any other note
+3. **Owned notes colocate automatically** — They live in the owner's folder, in a subfolder by type
+4. **`owned: true` works with `multiple: true`** — A parent can own multiple children
+5. **Body wikilinks are unrestricted** — You can always link to any note in body text
 
 ### Folder Structure Examples
 
-**Without colocation (flat by type):**
+**Without ownership (flat by type):**
 ```
 objectives/
 └── tasks/
     ├── Fix login bug.md
     ├── Update docs.md
     └── Ship feature.md
+
+research/
+├── Character Research.md
+├── World Building.md
+└── General Fantasy Tropes.md
 ```
 
-**With colocation (grouped by context):**
+**With ownership (grouped by owner):**
 ```
 drafts/
-├── Quick Thought.md                    # No children
-└── My Novel/                           # Has colocated children
+├── Quick Thought.md                    # No owned children
+└── My Novel/                           # Has owned children
     ├── My Novel.md
     ├── research/
-    │   ├── Character Research.md
-    │   └── World Building.md
+    │   ├── Character Research.md       # Owned by My Novel
+    │   └── World Building.md           # Owned by My Novel
     └── chapters/
         ├── Chapter 1/
         │   ├── Chapter 1.md
@@ -266,11 +287,24 @@ drafts/
         │       ├── Opening.md
         │       └── Climax.md
         └── Chapter 2.md
+
+research/
+└── General Fantasy Tropes.md           # Shared, not owned
 ```
+
+### Ownership vs. Shared References
+
+Choose based on your use case:
+
+| Use Case | Ownership | Field Config |
+|----------|-----------|--------------|
+| "This research is ONLY for this novel" | Owned | `owned: true` |
+| "This research is useful across drafts" | Shared | `owned: false` (or omit) |
+| "Link to related context without ownership" | Reference | Any field without `owned` |
 
 ### Default Folder Computation
 
-When a note is NOT colocated, its folder is computed from the type hierarchy:
+When a note is NOT owned, its folder is computed from the type hierarchy:
 
 ```
 type: task
@@ -306,7 +340,7 @@ When `recursive: true`:
 
 ### Parent Field
 
-The parent field for recursive types:
+The parent field for recursive types. Note that for recursion, the **child** declares its parent (inverse of ownership):
 
 ```json
 {
@@ -318,13 +352,14 @@ The parent field for recursive types:
         "prompt": "dynamic",
         "source": "task",      // Same type
         "format": "wikilink",
-        "required": false,
-        "colocate": true       // Subtasks live with parent
+        "required": false
       }
     }
   }
 }
 ```
+
+For subtasks to live with their parent, the **parent task** would have an `owned: true` field pointing to child tasks. But in practice, recursive types often just use the parent reference for hierarchy without strict ownership.
 
 ### Mixed Parent Types
 
@@ -338,7 +373,7 @@ Some types can have a parent of a different type OR self-recurse:
     "fields": {
       "parent": {
         "source": "chapter",   // Primary parent type
-        "colocate": true
+        "format": "wikilink"
       }
     }
   }
@@ -371,7 +406,7 @@ Types can be abstract (no direct instances) or concrete (has instances).
 
 Pika infers this from usage:
 
-1. **Has colocating children** → Concrete (the parent instances exist)
+1. **Has owned children** → Concrete (the parent instances exist)
 2. **Has notes with this exact type** → Concrete
 3. **Neither of the above** → Abstract
 
@@ -481,18 +516,33 @@ goal       Ship v1.0            raw
           "source": "milestone",
           "format": "wikilink"
         },
-        "parent": {
+        "subtasks": {
           "prompt": "dynamic",
           "source": "task",
           "format": "wikilink",
-          "colocate": true
+          "multiple": true,
+          "owned": true
         }
       }
     },
     
     "draft": {
       "fields": {
-        "draft-status": { "prompt": "select", "enum": "draft-status", "default": "idea" }
+        "draft-status": { "prompt": "select", "enum": "draft-status", "default": "idea" },
+        "chapters": {
+          "prompt": "dynamic",
+          "source": "chapter",
+          "format": "wikilink",
+          "multiple": true,
+          "owned": true
+        },
+        "research": {
+          "prompt": "dynamic",
+          "source": "research",
+          "format": "wikilink",
+          "multiple": true,
+          "owned": true
+        }
       }
     },
     
@@ -500,11 +550,19 @@ goal       Ship v1.0            raw
       "extends": "draft",
       "recursive": true,
       "fields": {
-        "parent": {
+        "scenes": {
           "prompt": "dynamic",
-          "source": "draft",
+          "source": "scene",
           "format": "wikilink",
-          "colocate": true
+          "multiple": true,
+          "owned": true
+        },
+        "subchapters": {
+          "prompt": "dynamic",
+          "source": "chapter",
+          "format": "wikilink",
+          "multiple": true,
+          "owned": true
         }
       }
     },
@@ -513,25 +571,18 @@ goal       Ship v1.0            raw
       "extends": "draft",
       "recursive": true,
       "fields": {
-        "parent": {
+        "subscenes": {
           "prompt": "dynamic",
-          "source": "chapter",
+          "source": "scene",
           "format": "wikilink",
-          "colocate": true
+          "multiple": true,
+          "owned": true
         }
       }
     },
     
     "research": {
-      "extends": "draft",
-      "fields": {
-        "for": {
-          "prompt": "dynamic",
-          "source": "draft",
-          "format": "wikilink",
-          "colocate": true
-        }
-      }
+      "extends": "draft"
     },
     
     "entity": {},
@@ -568,8 +619,8 @@ Pika validates schemas on load:
 2. **No circular extends** — Error if A extends B extends A
 3. **Valid extends targets** — Referenced parent must exist
 4. **Valid source targets** — Referenced types in `source` must exist
-5. **Colocate requires single** — Error if `colocate: true` with `multiple: true`
-6. **Recursive implies parent** — Warning if `recursive: true` but no parent-like field
+5. **Owned notes are exclusive** — Error if a note is referenced by multiple `owned: true` fields
+6. **Recursive implies ownership or parent** — Warning if `recursive: true` but no ownership field or parent-like field
 
 ---
 
@@ -611,9 +662,10 @@ Pika validates schemas on load:
 | ovault | Pika |
 |--------|------|
 | Nested `subtypes` | Flat types with `extends` |
-| `output_dir` explicit | Computed from hierarchy + colocation |
+| `output_dir` explicit | Computed from hierarchy + ownership |
 | `frontmatter` object | `fields` object |
 | `type` + `{type}-type` fields | Single `type` field |
+| Instance-grouped types | `owned: true` on parent's field |
 
 ### Migration Steps
 
@@ -630,8 +682,14 @@ Pika validates schemas on load:
 |---------|---------|-----------|
 | **Inheritance** | What a note IS | `extends` property, single parent |
 | **Context** | What a note SUPPORTS | Wikilink fields with `source` |
-| **Colocation** | Where a note LIVES | `colocate: true` on context fields |
+| **Ownership** | Whether a note is PRIVATE | `owned: true` on parent's field |
 | **Recursion** | Self-nesting | `recursive: true` on type |
 | **Abstract/Concrete** | Query defaults | Inferred from usage |
 
-The model is simple: inherit fields from one parent, link to context via fields, optionally live with your context. Everything else composes from these primitives.
+The model is simple: 
+- Inherit fields from one parent
+- Link to context via fields  
+- Optionally own your children (they become private and colocate with you)
+- Body wikilinks are always unrestricted
+
+Everything else composes from these primitives.
