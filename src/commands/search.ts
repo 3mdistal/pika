@@ -223,7 +223,7 @@ async function handleContentSearch(
     pattern: query,
     vaultDir,
     schema,
-    typePath: options.type,
+    ...(options.type !== undefined ? { typePath: options.type } : {}),
     contextLines,
     caseSensitive: options.caseSensitive ?? false,
     regex: options.regex ?? false,
@@ -255,11 +255,13 @@ async function handleContentSearch(
   // Handle no results
   if (filteredResults.length === 0) {
     if (jsonMode) {
-      printJson(jsonSuccess({
+      // Content search has a custom JSON shape with totalMatches/truncated
+      console.log(JSON.stringify({
+        success: true,
         data: [],
         totalMatches: 0,
         truncated: false,
-      }));
+      }, null, 2));
     } else {
       // Silent output for no matches (consistent with grep behavior)
     }
@@ -294,7 +296,8 @@ async function handleContentSearch(
         results: filteredResults,
         totalMatches: filteredResults.reduce((sum, r) => sum + r.matches.length, 0),
       });
-      printJson(jsonOutput);
+      // Content search has a custom JSON shape, output directly
+      console.log(JSON.stringify(jsonOutput, null, 2));
     } else {
       const showContext = !options.noContext && contextLines > 0;
       const textOutput = formatResultsText(filteredResults, showContext);

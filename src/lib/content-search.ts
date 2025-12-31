@@ -207,12 +207,15 @@ function parseRipgrepOutput(output: string): Map<string, LineMatch[]> {
       const bufferedContext = contextBuffer.get(relativePath);
       const contextBefore = bufferedContext?.before ?? [];
 
-      matches.push({
+      const match: LineMatch = {
         line: lineNumber,
         text,
-        contextBefore: contextBefore.length > 0 ? [...contextBefore] : undefined,
         contextAfter: [], // Will be filled by subsequent context messages
-      });
+      };
+      if (contextBefore.length > 0) {
+        match.contextBefore = [...contextBefore];
+      }
+      matches.push(match);
 
       // Clear the context buffer for this file
       contextBuffer.delete(relativePath);
@@ -446,10 +449,14 @@ export function formatResultsJson(
   error?: string;
 } {
   if (!searchResult.success) {
-    return {
-      success: false,
-      error: searchResult.error,
-    };
+    const result: {
+      success: boolean;
+      error?: string;
+    } = { success: false };
+    if (searchResult.error !== undefined) {
+      result.error = searchResult.error;
+    }
+    return result;
   }
 
   return {
