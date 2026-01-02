@@ -13,6 +13,7 @@ import { resolveVaultDir } from '../lib/vault.js';
 import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
 import { printError } from '../lib/prompt.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes, exitWithResolutionError } from '../lib/output.js';
+import { openNote } from './open.js';
 import {
   buildNoteIndex,
   generateWikilink,
@@ -39,6 +40,9 @@ interface SearchOptions {
   wikilink?: boolean;
   path?: boolean;
   content?: boolean;
+  // Open options
+  open?: boolean;
+  app?: string;
   // Content search options
   text?: boolean;
   type?: string;
@@ -70,6 +74,8 @@ export const searchCommand = new Command('search')
   .option('--wikilink', 'Output [[Name]] format for Obsidian links')
   .option('--path', 'Output vault-relative path with extension')
   .option('--content', 'Output full file contents (frontmatter + body)')
+  .option('--open', 'Open the selected note after search')
+  .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
   .option('--picker <mode>', 'Selection mode: auto (default), fzf, numbered, none')
   .option('-o, --output <format>', 'Output format: text (default) or json')
   // Content search options
@@ -118,10 +124,25 @@ Content Search (--text):
     --field=             Include where field is empty/missing
     --field!=            Include where field exists
 
+Open Options:
+  --open               Open the selected note in an app
+  --app <mode>         How to open: obsidian (default), editor, system, print
+
+App Modes:
+  obsidian    Open in Obsidian via URI scheme (default)
+  editor      Open in $VISUAL or $EDITOR
+  system      Open with system default handler
+  print       Print the resolved path (for scripting)
+
+Environment Variables:
+  PIKA_DEFAULT_APP    Default app mode (obsidian, editor, system, print)
+
 Examples:
   # Name search
   pika search "My Note"                    # Find by name
   pika search "My Note" --wikilink         # Output: [[My Note]]
+  pika search "My Note" --open             # Find and open in Obsidian
+  pika search "My Note" --open --app editor  # Find and open in $EDITOR
   
   # Content search
   pika search "deploy" --text              # Search all notes for "deploy"
@@ -130,6 +151,7 @@ Examples:
   pika search "TODO" -t --where "status != 'done'"  # Expression filter
   pika search "error.*log" -t --regex      # Regex search
   pika search "deploy" -t --output json    # JSON output with matches
+  pika search "deploy" -t --open           # Search and open first match
   
   # Piping
   pika search "bug" -t --path | xargs -I {} code {}`)
@@ -277,11 +299,19 @@ async function handleContentSearch(
     const files = filteredResults.map(r => r.file);
     const pickerResult = await pickFile(files, {
       mode: pickerMode,
-      prompt: `${filteredResults.length} files with matches`,
+      prompt: options.open 
+        ? `${filteredResults.length} files with matches - select to open`
+        : `${filteredResults.length} files with matches`,
     });
 
     if (pickerResult.cancelled || !pickerResult.selected) {
       process.exit(0);
+    }
+
+    // Handle --open flag
+    if (options.open) {
+      await openNote(vaultDir, pickerResult.selected.path, options.app, false);
+      return;
     }
 
     // Output the selected file based on format
@@ -289,7 +319,15 @@ async function handleContentSearch(
     const outputFormat = determineOutputFormat(options, jsonMode);
     await outputTextResult(index, pickerResult.selected, outputFormat);
   } else {
-    // Non-interactive: output all results
+    // Non-interactive mode
+    // Handle --open flag (open first result)
+    if (options.open && filteredResults.length > 0) {
+      const firstResult = filteredResults[0]!;
+      await openNote(vaultDir, firstResult.file.path, options.app, jsonMode);
+      return;
+    }
+
+    // Output all results
     if (jsonMode) {
       const jsonOutput = formatResultsJson({
         ...searchResult,
@@ -374,7 +412,7 @@ async function handleNameSearch(
   // Resolve query to file(s)
   const result = await resolveAndPick(index, query, {
     pickerMode: effectivePickerMode,
-    prompt: 'Select note',
+    prompt: options.open ? 'Select note to open' : 'Select note',
   });
 
   if (!result.ok) {
@@ -395,6 +433,12 @@ async function handleNameSearch(
   }
 
   const targetFile = result.file;
+
+  // Handle --open flag
+  if (options.open) {
+    await openNote(vaultDir, targetFile.path, options.app, jsonMode);
+    return;
+  }
 
   if (jsonMode) {
     // JSON output - always return array for consistency

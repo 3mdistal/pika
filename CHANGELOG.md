@@ -4,6 +4,17 @@ All notable changes to Pika are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`--open` flag for `search` and `list` commands** (pika-fkd)
+  - `pika search "My Note" --open` - Search for a note and open it in Obsidian/editor
+  - `pika list task --status=inbox --open` - Filter notes and pick one to open
+  - `--app <mode>` flag specifies how to open: obsidian (default), editor, system, print
+  - Respects `PIKA_DEFAULT_APP` environment variable
+  - Works with both name search and content search modes
+  - For `list`, uses picker when multiple results (in interactive mode)
+  - The `open` command is now an alias for `search --open` (kept for backward compatibility)
+
 ### Breaking Changes
 
 - **Removed `dynamic_sources` - use type-based sources instead** (pika-fqh)

@@ -19,6 +19,8 @@ import {
   jsonError,
   ExitCodes,
 } from '../lib/output.js';
+import { openNote } from './open.js';
+import { pickFile, parsePickerMode } from '../lib/picker.js';
 import type { LoadedSchema } from '../types/schema.js';
 
 interface ListCommandOptions {
@@ -26,6 +28,9 @@ interface ListCommandOptions {
   fields?: string;
   where?: string[];
   output?: string;
+  // Open options
+  open?: boolean;
+  app?: string;
   // Hierarchy options for recursive types
   roots?: boolean;
   childrenOf?: string;
@@ -55,6 +60,12 @@ Examples:
   pika list idea --fields=status,priority
   pika list task --where "status == 'done' && !isEmpty(tags)"
   pika list task --output json
+  pika list task --open                    # Pick from tasks and open
+  pika list task --status=inbox --open     # Filter, then open result
+
+Open Options:
+  --open               Open a note from the results (picker if multiple)
+  --app <mode>         How to open: obsidian (default), editor, system, print
 
 Note: In zsh, use single quotes for expressions with '!' to avoid history expansion:
   pika list task --where '!isEmpty(deadline)'`)
@@ -63,6 +74,9 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
   .option('--fields <fields>', 'Show frontmatter fields in a table (comma-separated)')
   .option('-w, --where <expression...>', 'Filter with expression (multiple are ANDed)')
   .option('-o, --output <format>', 'Output format: text (default) or json')
+  // Open options
+  .option('--open', 'Open the first result (or pick from results interactively)')
+  .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
   // Hierarchy options for recursive types
   .option('--roots', 'Only show notes with no parent (root nodes)')
   .option('--children-of <note>', 'Only show direct children of the specified note (wikilink format)')
@@ -126,6 +140,9 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
         filters,
         whereExpressions: options.where ?? [],
         jsonMode,
+        // Open options
+        open: options.open,
+        app: options.app,
         // Hierarchy options
         roots: options.roots,
         childrenOf: options.childrenOf,
@@ -150,6 +167,9 @@ interface ListOptions {
   filters: { field: string; operator: 'eq' | 'neq'; values: string[] }[];
   whereExpressions: string[];
   jsonMode: boolean;
+  // Open options
+  open?: boolean | undefined;
+  app?: string | undefined;
   // Hierarchy options
   roots?: boolean | undefined;
   childrenOf?: string | undefined;
@@ -270,6 +290,45 @@ async function listObjects(
     return nameA.localeCompare(nameB);
   });
 
+  // Handle no results
+  if (filteredFiles.length === 0) {
+    if (options.jsonMode) {
+      console.log(JSON.stringify([], null, 2));
+    }
+    return;
+  }
+
+  // Handle --open flag
+  if (options.open) {
+    let targetPath: string;
+    
+    if (filteredFiles.length === 1) {
+      // Single result - open directly
+      targetPath = filteredFiles[0]!.path;
+    } else if (process.stdin.isTTY && process.stdout.isTTY) {
+      // Multiple results - use picker
+      const files = filteredFiles.map(f => ({
+        path: f.path,
+        relativePath: relative(vaultDir, f.path),
+      }));
+      const pickerResult = await pickFile(files, {
+        mode: parsePickerMode(undefined),
+        prompt: `${filteredFiles.length} notes - select to open`,
+      });
+      
+      if (pickerResult.cancelled || !pickerResult.selected) {
+        process.exit(0);
+      }
+      targetPath = pickerResult.selected.path;
+    } else {
+      // Non-interactive with multiple results - open first
+      targetPath = filteredFiles[0]!.path;
+    }
+    
+    await openNote(vaultDir, targetPath, options.app, options.jsonMode);
+    return;
+  }
+
   // JSON output mode
   if (options.jsonMode) {
     const jsonOutput = filteredFiles.map(({ path, frontmatter }) => ({
@@ -278,11 +337,6 @@ async function listObjects(
       ...frontmatter,
     }));
     console.log(JSON.stringify(jsonOutput, null, 2));
-    return;
-  }
-
-  // Text output mode
-  if (filteredFiles.length === 0) {
     return;
   }
 
