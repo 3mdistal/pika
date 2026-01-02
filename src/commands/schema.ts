@@ -263,6 +263,15 @@ schemaCommand
   .option('-o, --output <format>', 'Output format: text (default) or json')
   .option('--extends <parent>', 'Parent type to extend')
   .option('--output-dir <dir>', 'Output directory for type files')
+  .addHelpText('after', `
+Examples:
+  # Non-interactive type creation (requires --output-dir):
+  pika schema add-type book --output-dir Books -o json
+  pika schema add-type entity --output-dir Entities
+  pika schema add-type person --extends entity --output-dir Entities/People -o json
+
+  # Interactive mode (prompts for options):
+  pika schema add-type book`)
   .action(async (name: string, options: AddTypeOptions, cmd: Command) => {
     const jsonMode = options.output === 'json';
 
@@ -633,6 +642,18 @@ schemaCommand
   .option('--format <format>', 'Link format: plain, wikilink, quoted-wikilink (for dynamic)')
   .option('--required', 'Mark field as required')
   .option('--default <value>', 'Default value')
+  .addHelpText('after', `
+Examples:
+  # Non-interactive field creation (requires --type flag):
+  pika schema add-field book title --type input --required -o json
+  pika schema add-field book status --type select --enum status -o json
+  pika schema add-field book author --type dynamic --source person --format wikilink -o json
+  pika schema add-field book edition --type fixed --value "1st" -o json
+  pika schema add-field book published --type date -o json
+  pika schema add-field book tags --type multi-input -o json
+
+  # Interactive mode (prompts for field definition):
+  pika schema add-field book title`)
   .action(async (typeName: string, fieldName: string | undefined, options: AddFieldOptions, cmd: Command) => {
     const jsonMode = options.output === 'json';
 
