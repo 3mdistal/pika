@@ -1,6 +1,6 @@
 {
   "$schema": "../../../schema.schema.json",
-  "version": 1,
+  "version": 2,
   "enums": {
     "status": ["raw", "backlog", "in-flight", "settled"],
     "priority": ["low", "medium", "high"]
@@ -8,94 +8,97 @@
   "types": {
     "objective": {
       "output_dir": "Objectives",
-      "subtypes": {
-        "task": {
-          "output_dir": "Objectives/Tasks",
-          "frontmatter": {
-            "type": { "value": "objective" },
-            "objective-type": { "value": "task" },
-            "status": {
-              "prompt": "select",
-              "enum": "status",
-              "default": "raw"
-            },
-            "milestone": {
-              "prompt": "dynamic",
-              "source": "milestone",
-              "filter": { "status": { "not_in": ["settled"] } },
-              "format": "quoted-wikilink"
-            },
-            "creation-date": { "value": "$NOW" },
-            "deadline": { "prompt": "input", "label": "Deadline (YYYY-MM-DD)" }
-          },
-          "frontmatter_order": [
-            "type",
-            "objective-type",
-            "status",
-            "milestone",
-            "creation-date",
-            "deadline"
-          ],
-          "body_sections": [
-            {
-              "title": "Steps",
-              "level": 2,
-              "content_type": "checkboxes",
-              "prompt": "multi-input",
-              "prompt_label": "Steps (comma-separated)"
-            },
-            {
-              "title": "Notes",
-              "level": 2,
-              "content_type": "paragraphs"
-            }
-          ]
+      "fields": {
+        "type": { "value": "objective" }
+      },
+      "field_order": ["type"]
+    },
+    "task": {
+      "extends": "objective",
+      "output_dir": "Objectives/Tasks",
+      "fields": {
+        "type": { "value": "task" },
+        "status": {
+          "prompt": "select",
+          "enum": "status",
+          "default": "raw"
         },
         "milestone": {
-          "output_dir": "Objectives/Milestones",
-          "frontmatter": {
-            "type": { "value": "objective" },
-            "objective-type": { "value": "milestone" },
-            "status": {
-              "prompt": "select",
-              "enum": "status",
-              "default": "raw"
-            }
-          },
-          "frontmatter_order": ["type", "objective-type", "status"],
-          "body_sections": [
-            {
-              "title": "Tasks",
-              "level": 2,
-              "content_type": "none"
-            }
-          ]
+          "prompt": "dynamic",
+          "source": "milestone",
+          "filter": { "status": { "not_in": ["settled"] } },
+          "format": "quoted-wikilink"
+        },
+        "creation-date": { "value": "$NOW" },
+        "deadline": { "prompt": "input", "label": "Deadline (YYYY-MM-DD)" }
+      },
+      "field_order": [
+        "type",
+        "status",
+        "milestone",
+        "creation-date",
+        "deadline"
+      ],
+      "body_sections": [
+        {
+          "title": "Steps",
+          "level": 2,
+          "content_type": "checkboxes",
+          "prompt": "multi-input",
+          "prompt_label": "Steps (comma-separated)"
+        },
+        {
+          "title": "Notes",
+          "level": 2,
+          "content_type": "paragraphs"
         }
-      }
+      ]
+    },
+    "milestone": {
+      "extends": "objective",
+      "output_dir": "Objectives/Milestones",
+      "fields": {
+        "type": { "value": "milestone" },
+        "status": {
+          "prompt": "select",
+          "enum": "status",
+          "default": "raw"
+        }
+      },
+      "field_order": ["type", "status"],
+      "body_sections": [
+        {
+          "title": "Tasks",
+          "level": 2,
+          "content_type": "none"
+        }
+      ]
     },
     "idea": {
       "output_dir": "Ideas",
-      "frontmatter": {
+      "fields": {
         "type": { "value": "idea" },
         "status": { "prompt": "select", "enum": "status", "default": "raw" },
         "priority": { "prompt": "select", "enum": "priority" }
       },
-      "frontmatter_order": ["type", "status", "priority"],
+      "field_order": ["type", "status", "priority"],
       "body_sections": []
     },
     "entity": {
       "output_dir": "Entities",
-      "subtypes": {
-        "person": {
-          "output_dir": "Entities/People",
-          "frontmatter": {
-            "type": { "value": "entity" },
-            "entity-type": { "value": "person" }
-          },
-          "frontmatter_order": ["type", "entity-type"],
-          "body_sections": []
-        }
-      }
+      "fields": {
+        "type": { "value": "entity" }
+      },
+      "field_order": ["type"]
+    },
+    "person": {
+      "extends": "entity",
+      "output_dir": "Entities/People",
+      "fields": {
+        "type": { "value": "person" }
+      },
+      "field_order": ["type"],
+      "body_sections": []
     }
   }
 }

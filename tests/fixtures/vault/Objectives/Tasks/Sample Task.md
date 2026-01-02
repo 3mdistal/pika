@@ -1,6 +1,5 @@
 ---
-type: objective
-objective-type: task
+type: task
 status: in-flight
 ---
 ## Steps

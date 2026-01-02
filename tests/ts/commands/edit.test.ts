@@ -58,7 +58,7 @@ status: backlog
       // Verify the file was updated correctly
       const content = await readFile(testFilePath, 'utf-8');
       expect(content).toContain('status: settled');
-      expect(content).toContain('objective-type: task'); // Preserved
+      expect(content).toContain('type: task'); // Preserved
     });
 
     it('should detect milestone subtype', async () => {
@@ -73,7 +73,7 @@ status: backlog
 
       const content = await readFile(join(vaultDir, 'Objectives/Milestones/Active Milestone.md'), 'utf-8');
       expect(content).toContain('status: settled');
-      expect(content).toContain('objective-type: milestone'); // Preserved
+      expect(content).toContain('type: milestone'); // Preserved
     });
 
     it('should work with absolute file paths', async () => {

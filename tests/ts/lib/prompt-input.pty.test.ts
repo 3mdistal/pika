@@ -123,11 +123,11 @@ describePty('Text Input Prompt PTY tests', () => {
         types: {
           task: {
             output_dir: 'Tasks',
-            frontmatter: {
+            fields: {
               type: { value: 'task' },
               deadline: { prompt: 'input', label: 'Deadline' },
             },
-            frontmatter_order: ['type', 'deadline'],
+            field_order: ['type', 'deadline'],
           },
         },
       };
@@ -164,11 +164,11 @@ describePty('Text Input Prompt PTY tests', () => {
         types: {
           note: {
             output_dir: 'Notes',
-            frontmatter: {
+            fields: {
               type: { value: 'note' },
               category: { prompt: 'input', label: 'Category', default: 'general' },
             },
-            frontmatter_order: ['type', 'category'],
+            field_order: ['type', 'category'],
           },
         },
       };

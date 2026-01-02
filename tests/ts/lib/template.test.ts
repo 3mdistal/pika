@@ -37,8 +37,8 @@ describe('template library', () => {
     });
 
     it('returns correct path for nested type', () => {
-      const result = getTemplateDir('/vault', 'objective/task');
-      expect(result).toBe('/vault/.pika/templates/objective/task');
+      const result = getTemplateDir('/vault', 'task');
+      expect(result).toBe('/vault/.pika/templates/task');
     });
 
     it('returns correct path for deeply nested type', () => {
@@ -160,25 +160,25 @@ Body.
 
   describe('findTemplates', () => {
     it('finds all templates for a type', async () => {
-      await mkdir(join(tempDir, '.pika/templates/objective/task'), { recursive: true });
+      await mkdir(join(tempDir, '.pika/templates/task'), { recursive: true });
       await writeFile(
-        join(tempDir, '.pika/templates/objective/task', 'default.md'),
+        join(tempDir, '.pika/templates/task', 'default.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 ---
 `
       );
       await writeFile(
-        join(tempDir, '.pika/templates/objective/task', 'bug-report.md'),
+        join(tempDir, '.pika/templates/task', 'bug-report.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 ---
 `
       );
 
-      const templates = await findTemplates(tempDir, 'objective/task');
+      const templates = await findTemplates(tempDir, 'task');
 
       expect(templates).toHaveLength(2);
       expect(templates.map(t => t.name)).toContain('default');
@@ -231,7 +231,7 @@ template-for: idea
         join(tempDir, '.pika/templates/idea', 'wrong.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 ---
 `
       );
@@ -243,7 +243,7 @@ template-for: objective/task
     it('does not inherit templates from parent type (strict matching)', async () => {
       // Create template in parent directory
       await mkdir(join(tempDir, '.pika/templates/objective'), { recursive: true });
-      await mkdir(join(tempDir, '.pika/templates/objective/task'), { recursive: true });
+      await mkdir(join(tempDir, '.pika/templates/task'), { recursive: true });
       
       await writeFile(
         join(tempDir, '.pika/templates/objective', 'parent-template.md'),
@@ -255,7 +255,7 @@ template-for: objective
       );
 
       // Search for task templates - should NOT find parent template
-      const templates = await findTemplates(tempDir, 'objective/task');
+      const templates = await findTemplates(tempDir, 'task');
       expect(templates).toEqual([]);
     });
   });
@@ -301,7 +301,7 @@ template-for: idea
         join(tempDir, '.pika/templates/idea', 'default.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 ---
 `
       );
@@ -313,18 +313,18 @@ template-for: objective/task
 
   describe('findTemplateByName', () => {
     it('finds template by name', async () => {
-      await mkdir(join(tempDir, '.pika/templates/objective/task'), { recursive: true });
+      await mkdir(join(tempDir, '.pika/templates/task'), { recursive: true });
       await writeFile(
-        join(tempDir, '.pika/templates/objective/task', 'bug-report.md'),
+        join(tempDir, '.pika/templates/task', 'bug-report.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 description: Bug template
 ---
 `
       );
 
-      const template = await findTemplateByName(tempDir, 'objective/task', 'bug-report');
+      const template = await findTemplateByName(tempDir, 'task', 'bug-report');
 
       expect(template).not.toBeNull();
       expect(template?.name).toBe('bug-report');
@@ -358,7 +358,7 @@ template-for: idea
         join(tempDir, '.pika/templates/idea', 'wrong.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 ---
 `
       );

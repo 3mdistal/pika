@@ -147,7 +147,7 @@ describe('query', () => {
     });
 
     it('should accept any value for non-enum fields', () => {
-      const result = validateFilterValues(schema, 'objective/task', 'deadline', ['anything']);
+      const result = validateFilterValues(schema, 'task', 'deadline', ['anything']);
       expect(result.valid).toBe(true);
     });
   });

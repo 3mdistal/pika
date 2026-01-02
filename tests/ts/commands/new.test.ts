@@ -76,7 +76,7 @@ describe('new command', () => {
 
     it('should error when --default but no default.md exists', async () => {
       const result = await runCLI(
-        ['new', 'objective/milestone', '--json', '{"name": "Test"}', '--default'],
+        ['new', 'milestone', '--json', '{"name": "Test"}', '--default'],
         vaultDir
       );
 
@@ -89,7 +89,7 @@ describe('new command', () => {
     it('should create note with --template flag applying defaults', async () => {
       // bug-report template has defaults: status: backlog
       const result = await runCLI(
-        ['new', 'objective/task', '--json', '{"name": "Fix the bug"}', '--template', 'bug-report'],
+        ['new', 'task', '--json', '{"name": "Fix the bug"}', '--template', 'bug-report'],
         vaultDir
       );
 
@@ -177,7 +177,7 @@ describe('new command', () => {
     it('should evaluate date expressions in template defaults', async () => {
       // Use the weekly-review template which has deadline: "today() + '7d'"
       const result = await runCLI(
-        ['new', 'objective/task', '--json', '{"name": "Weekly Review Test"}', '--template', 'weekly-review'],
+        ['new', 'task', '--json', '{"name": "Weekly Review Test"}', '--template', 'weekly-review'],
         vaultDir
       );
 
@@ -202,7 +202,7 @@ describe('new command', () => {
     it('should allow JSON input to override date expression defaults', async () => {
       // Template has deadline: "today() + '7d'" but JSON input overrides it
       const result = await runCLI(
-        ['new', 'objective/task', '--json', '{"name": "Override Date", "deadline": "2030-01-15"}', '--template', 'weekly-review'],
+        ['new', 'task', '--json', '{"name": "Override Date", "deadline": "2030-01-15"}', '--template', 'weekly-review'],
         vaultDir
       );
 

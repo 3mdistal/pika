@@ -72,27 +72,28 @@ describe('schema', () => {
   });
 
   describe('parseTypePath', () => {
-    it('should split type path into segments', () => {
-      expect(parseTypePath('objective/task')).toEqual(['objective', 'task']);
+    it('should return type name as single-element array (legacy function)', () => {
+      // In v2, parseTypePath just returns [typeName] - no path splitting
+      expect(parseTypePath('task')).toEqual(['task']);
       expect(parseTypePath('idea')).toEqual(['idea']);
-      expect(parseTypePath('')).toEqual([]);
+      expect(parseTypePath('')).toEqual(['']);
     });
   });
 
   describe('getTypeDefByPath', () => {
-    it('should return type definition for simple path', () => {
+    it('should return type definition for type name', () => {
       const typeDef = getTypeDefByPath(schema, 'idea');
       expect(typeDef).toBeDefined();
       expect(typeDef?.outputDir).toBe('Ideas');
     });
 
-    it('should return subtype definition for nested path', () => {
-      const typeDef = getTypeDefByPath(schema, 'objective/task');
+    it('should return type definition for child type', () => {
+      const typeDef = getTypeDefByPath(schema, 'task');
       expect(typeDef).toBeDefined();
       expect(typeDef?.outputDir).toBe('Objectives/Tasks');
     });
 
-    it('should return undefined for unknown path', () => {
+    it('should return undefined for unknown type', () => {
       const typeDef = getTypeDefByPath(schema, 'unknown');
       expect(typeDef).toBeUndefined();
     });
@@ -137,32 +138,29 @@ describe('schema', () => {
   describe('getFieldsForType', () => {
     it('should return fields for a type', () => {
       const fields = getFieldsForType(schema, 'idea');
-      // In new model, 'type' is not a field - it's implicit
       expect(fields).toHaveProperty('status');
       expect(fields).toHaveProperty('priority');
     });
 
-    it('should return fields for nested type', () => {
-      const fields = getFieldsForType(schema, 'objective/task');
-      // In new model, discriminator fields are not included
+    it('should return fields for child type', () => {
+      const fields = getFieldsForType(schema, 'task');
       expect(fields).toHaveProperty('status');
       expect(fields).toHaveProperty('milestone');
       expect(fields).toHaveProperty('deadline');
     });
 
-    it('should inherit fields from parent type', () => {
-      // task inherits status from objective ancestor chain
-      const taskFields = getFieldsForType(schema, 'objective/task');
+    it('should include fields defined on type', () => {
+      const taskFields = getFieldsForType(schema, 'task');
       expect(taskFields).toHaveProperty('status');
       expect(taskFields).toHaveProperty('tags');
     });
 
-    it('should apply field default overrides', () => {
-      // task has status default 'backlog' (overridden from shared field default)
-      const taskFields = getFieldsForType(schema, 'objective/task');
+    it('should have correct defaults', () => {
+      // task has status default 'backlog'
+      const taskFields = getFieldsForType(schema, 'task');
       expect(taskFields.status?.default).toBe('backlog');
 
-      // idea uses default 'raw' (directly from shared fields)
+      // idea uses default 'raw'
       const ideaFields = getFieldsForType(schema, 'idea');
       expect(ideaFields.status?.default).toBe('raw');
     });
@@ -180,11 +178,10 @@ describe('schema', () => {
   });
 
   describe('getOrderedFieldNames', () => {
-    it('should use frontmatter_order if defined', () => {
-      const typeDef = getTypeDefByPath(schema, 'objective/task');
+    it('should use field_order if defined', () => {
+      const typeDef = getTypeDefByPath(schema, 'task');
       expect(typeDef).toBeDefined();
-      const order = getOrderedFieldNames(schema, 'objective/task', typeDef!);
-      // In new model, discriminator fields are not included
+      const order = getOrderedFieldNames(schema, 'task', typeDef!);
       expect(order).toContain('status');
       expect(order).toContain('milestone');
       expect(order).toContain('deadline');
@@ -207,21 +204,18 @@ describe('schema', () => {
       expect(typeName).toBe('idea');
     });
 
-    it('should resolve type directly (no nested paths in new model)', () => {
-      // In new model, frontmatter just has 'type: task' not 'type: objective' + 'objective-type: task'
+    it('should resolve child type directly', () => {
+      // In v2 model, frontmatter has just 'type: task'
       const typeName = resolveTypePathFromFrontmatter(schema, { type: 'task' });
       expect(typeName).toBe('task');
     });
 
-    it('should resolve legacy nested frontmatter to type (backward compatibility)', () => {
-      // Legacy frontmatter with type: objective, objective-type: task should still work
-      // by reading the more specific discriminator field to get the actual type
+    it('should return parent type when only parent specified', () => {
+      // If frontmatter has type: objective, return objective (not task)
       const typeName = resolveTypePathFromFrontmatter(schema, {
         type: 'objective',
-        'objective-type': 'task',
       });
-      // In backward-compatible mode, the resolver returns the child type from the discriminator
-      expect(typeName).toBe('task');
+      expect(typeName).toBe('objective');
     });
 
     it('should return undefined for missing type', () => {
@@ -246,31 +240,31 @@ describe('schema', () => {
     });
 
     it('should return undefined for non-enum fields', () => {
-      const enumName = getEnumForField(schema, 'objective/task', 'deadline');
+      const enumName = getEnumForField(schema, 'task', 'deadline');
       expect(enumName).toBeUndefined();
     });
   });
 
   describe('getDiscriminatorFieldsFromTypePath', () => {
-    it('should return type field for simple path', () => {
+    it('should return type field for type name', () => {
       const fields = getDiscriminatorFieldsFromTypePath('idea');
       expect(fields).toEqual({ type: 'idea' });
     });
 
-    it('should return just type field in new model (extracts last segment)', () => {
-      // In new model, we use single 'type' field with the type name
-      const fields = getDiscriminatorFieldsFromTypePath('objective/task');
+    it('should return type field with provided name', () => {
+      // In v2, this function just returns { type: typeName }
+      const fields = getDiscriminatorFieldsFromTypePath('task');
       expect(fields).toEqual({ type: 'task' });
     });
 
-    it('should extract last segment for deeply nested paths', () => {
-      const fields = getDiscriminatorFieldsFromTypePath('a/b/c');
-      expect(fields).toEqual({ type: 'c' });
+    it('should return type field for any string', () => {
+      const fields = getDiscriminatorFieldsFromTypePath('milestone');
+      expect(fields).toEqual({ type: 'milestone' });
     });
 
-    it('should return empty object for empty path', () => {
+    it('should return type field with empty string for empty input', () => {
       const fields = getDiscriminatorFieldsFromTypePath('');
-      expect(fields).toEqual({});
+      expect(fields).toEqual({ type: '' });
     });
   });
 
@@ -455,8 +449,8 @@ describe('schema', () => {
       }
     });
 
-    it('should detect path format and suggest using type name directly', () => {
-      // 'objective/task' uses path format; task is a valid type
+    it('should report path format error for slash-containing names with valid last segment', () => {
+      // 'objective/task' has 'task' as valid type - suggest using just the type name
       const result = resolveSourceType(schema, 'objective/task');
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -466,11 +460,11 @@ describe('schema', () => {
       }
     });
 
-    it('should detect path format when neither segment is a valid type', () => {
+    it('should report path format error for invalid path format names', () => {
       const result = resolveSourceType(schema, 'foo/bar');
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error).toContain('uses path format which is not supported');
+        expect(result.error).toContain('uses path format');
         expect(result.error).toContain('Available types:');
       }
     });

@@ -1,6 +1,6 @@
 ---
 type: template
-template-for: objective/task
+template-for: task
 description: Bug report with reproduction steps
 defaults:
   status: backlog

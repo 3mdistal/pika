@@ -22,7 +22,7 @@ describe('list command', () => {
     });
 
     it('should list subtypes with slash notation', async () => {
-      const result = await runCLI(['list', 'objective/task'], vaultDir);
+      const result = await runCLI(['list', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Sample Task');
@@ -38,7 +38,7 @@ describe('list command', () => {
     });
 
     it('should return empty for type with no files', async () => {
-      const result = await runCLI(['list', 'objective/milestone', '--status=raw'], vaultDir);
+      const result = await runCLI(['list', 'milestone', '--status=raw'], vaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toBe('');
@@ -65,7 +65,7 @@ describe('list command', () => {
     });
 
     it('should show nested paths for subtypes', async () => {
-      const result = await runCLI(['list', '--paths', 'objective/task'], vaultDir);
+      const result = await runCLI(['list', '--paths', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Objectives/Tasks/Sample Task.md');
@@ -120,7 +120,7 @@ describe('list command', () => {
     });
 
     it('should filter by negation', async () => {
-      const result = await runCLI(['list', 'objective/milestone', '--status!=settled'], vaultDir);
+      const result = await runCLI(['list', 'milestone', '--status!=settled'], vaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Active Milestone');

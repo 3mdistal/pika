@@ -25,11 +25,11 @@ describe('copyFixtureTemplates', () => {
       const ideaDefault = await vaultFileExists(vaultPath, '.pika/templates/idea/default.md');
       expect(ideaDefault).toBe(true);
       
-      // Check that objective/task templates exist
-      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/objective/task/default.md');
+      // Check that task templates exist
+      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/task/default.md');
       expect(taskDefault).toBe(true);
       
-      const taskBugReport = await vaultFileExists(vaultPath, '.pika/templates/objective/task/bug-report.md');
+      const taskBugReport = await vaultFileExists(vaultPath, '.pika/templates/task/bug-report.md');
       expect(taskBugReport).toBe(true);
     } finally {
       await cleanupTempVault(vaultPath);
@@ -46,7 +46,7 @@ describe('copyFixtureTemplates', () => {
       expect(ideaDefault).toBe(true);
       
       // Objective templates should NOT exist
-      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/objective/task/default.md');
+      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/task/default.md');
       expect(taskDefault).toBe(false);
     } finally {
       await cleanupTempVault(vaultPath);
@@ -89,7 +89,7 @@ describe('createTempVault with includeTemplates', () => {
       const ideaDefault = await vaultFileExists(vaultPath, '.pika/templates/idea/default.md');
       expect(ideaDefault).toBe(true);
       
-      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/objective/task/default.md');
+      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/task/default.md');
       expect(taskDefault).toBe(true);
     } finally {
       await cleanupTempVault(vaultPath);
@@ -102,7 +102,7 @@ describe('createTempVault with includeTemplates', () => {
       const ideaDefault = await vaultFileExists(vaultPath, '.pika/templates/idea/default.md');
       expect(ideaDefault).toBe(true);
       
-      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/objective/task/default.md');
+      const taskDefault = await vaultFileExists(vaultPath, '.pika/templates/task/default.md');
       expect(taskDefault).toBe(false);
     } finally {
       await cleanupTempVault(vaultPath);

@@ -168,10 +168,10 @@ describe('Discovery', () => {
 
   describe('collectFilesForType', () => {
     it('should collect files for a specific leaf type', async () => {
-      const files = await collectFilesForType(schema, vaultDir, 'objective/task');
+      const files = await collectFilesForType(schema, vaultDir, 'task');
       
       expect(files.length).toBeGreaterThan(0);
-      expect(files[0]!.expectedType).toBe('objective/task');
+      expect(files[0]!.expectedType).toBe('task');
     });
 
     it('should return empty for invalid type', async () => {

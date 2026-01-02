@@ -23,7 +23,7 @@ const describePty = shouldSkipPtyTests()
 
 // Schema for edit tests
 const EDIT_SCHEMA = {
-  version: 1,
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
     priority: ['low', 'medium', 'high'],
@@ -31,13 +31,13 @@ const EDIT_SCHEMA = {
   types: {
     idea: {
       output_dir: 'Ideas',
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
         status: { prompt: 'select', enum: 'status', default: 'raw' },
         priority: { prompt: 'select', enum: 'priority' },
         description: { prompt: 'input', label: 'Description' },
       },
-      frontmatter_order: ['type', 'status', 'priority', 'description'],
+      field_order: ['type', 'status', 'priority', 'description'],
       body_sections: [
         { title: 'Notes', level: 2, content_type: 'paragraphs' },
       ],

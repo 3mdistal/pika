@@ -26,7 +26,7 @@ const describePty = shouldSkipPtyTests()
 
 // Full schema for testing new command flows
 const FULL_SCHEMA = {
-  version: 1,
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
     priority: ['low', 'medium', 'high'],
@@ -34,45 +34,47 @@ const FULL_SCHEMA = {
   types: {
     objective: {
       output_dir: 'Objectives',
-      subtypes: {
-        task: {
-          output_dir: 'Tasks',
-          frontmatter: {
-            type: { value: 'objective' },
-            'objective-type': { value: 'task' },
-            status: { prompt: 'select', enum: 'status', default: 'raw' },
-            milestone: {
-              prompt: 'dynamic',
-              source: 'milestone',
-              filter: { status: { not_in: ['settled'] } },
-              format: 'quoted-wikilink',
-            },
-          },
-          frontmatter_order: ['type', 'objective-type', 'status', 'milestone'],
-          body_sections: [
-            { title: 'Steps', level: 2, content_type: 'checkboxes', prompt: 'multi-input', prompt_label: 'Steps' },
-            { title: 'Notes', level: 2, content_type: 'paragraphs' },
-          ],
-        },
+      fields: {
+        type: { value: 'objective' },
+      },
+      field_order: ['type'],
+    },
+    task: {
+      extends: 'objective',
+      output_dir: 'Tasks',
+      fields: {
+        type: { value: 'task' },
+        status: { prompt: 'select', enum: 'status', default: 'raw' },
         milestone: {
-          output_dir: 'Milestones',
-          frontmatter: {
-            type: { value: 'objective' },
-            'objective-type': { value: 'milestone' },
-            status: { prompt: 'select', enum: 'status', default: 'raw' },
-          },
-          frontmatter_order: ['type', 'objective-type', 'status'],
+          prompt: 'dynamic',
+          source: 'milestone',
+          filter: { status: { not_in: ['settled'] } },
+          format: 'quoted-wikilink',
         },
       },
+      field_order: ['type', 'status', 'milestone'],
+      body_sections: [
+        { title: 'Steps', level: 2, content_type: 'checkboxes', prompt: 'multi-input', prompt_label: 'Steps' },
+        { title: 'Notes', level: 2, content_type: 'paragraphs' },
+      ],
+    },
+    milestone: {
+      extends: 'objective',
+      output_dir: 'Milestones',
+      fields: {
+        type: { value: 'milestone' },
+        status: { prompt: 'select', enum: 'status', default: 'raw' },
+      },
+      field_order: ['type', 'status'],
     },
     idea: {
       output_dir: 'Ideas',
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
         status: { prompt: 'select', enum: 'status', default: 'raw' },
         priority: { prompt: 'select', enum: 'priority' },
       },
-      frontmatter_order: ['type', 'status', 'priority'],
+      field_order: ['type', 'status', 'priority'],
     },
   },
 };
@@ -124,15 +126,14 @@ describePty('pika new command PTY tests', () => {
       const milestone: TempVaultFile = {
         path: 'Milestones/Active Milestone.md',
         content: `---
-type: objective
-objective-type: milestone
+type: milestone
 status: in-flight
 ---
 `,
       };
 
       await withTempVault(
-        ['new', 'objective/task'],
+        ['new', 'task'],
         async (proc, vaultPath) => {
           // Wait for name prompt
           await proc.waitFor('Name', 10000);
@@ -305,7 +306,7 @@ status: in-flight
 
     it('should cancel cleanly at body section prompt - no file created', async () => {
       await withTempVault(
-        ['new', 'objective/task'],
+        ['new', 'task'],
         async (proc, vaultPath) => {
           // Complete frontmatter prompts
           await proc.waitFor('Name', 10000);

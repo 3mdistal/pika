@@ -1,6 +1,6 @@
 ---
 type: template
-template-for: objective/task
+template-for: task
 description: Weekly review task with auto-deadline
 defaults:
   status: backlog

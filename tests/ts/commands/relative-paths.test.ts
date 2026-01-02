@@ -43,7 +43,7 @@ describe('relative vault path handling', () => {
     });
 
     it('should work with subtypes using relative path', async () => {
-      const result = await runCLI(['--vault', relativeVaultPath, 'list', 'objective/task']);
+      const result = await runCLI(['--vault', relativeVaultPath, 'list', 'task']);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Sample Task');
@@ -158,7 +158,7 @@ describe('relative vault path handling', () => {
         '--vault',
         relativeVaultPath,
         'new',
-        'objective/task',
+        'task',
         '--json',
         json,
       ]);
@@ -237,16 +237,16 @@ describe('edge cases', () => {
       await writeFile(
         join(spacedVaultDir, '.pika', 'schema.json'),
         JSON.stringify({
-          version: 1,
+          version: 2,
           enums: { status: ['raw', 'done'] },
           types: {
             idea: {
               output_dir: 'Ideas',
-              frontmatter: {
+              fields: {
                 type: { value: 'idea' },
                 status: { prompt: 'select', enum: 'status' },
               },
-              frontmatter_order: ['type', 'status'],
+              field_order: ['type', 'status'],
             },
           },
         })

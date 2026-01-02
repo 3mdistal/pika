@@ -374,10 +374,11 @@ async function collectFilesForType(
   if (!typeDef) return [];
 
   if (hasSubtypes(typeDef)) {
-    // Recurse into subtypes
+    // Recurse into subtypes (children in v2)
     const files: string[] = [];
     for (const subtype of getSubtypeKeys(typeDef)) {
-      const subFiles = await collectFilesForType(schema, vaultDir, `${typePath}/${subtype}`);
+      // In v2, children are just type names, not paths
+      const subFiles = await collectFilesForType(schema, vaultDir, subtype);
       files.push(...subFiles);
     }
     return files;
