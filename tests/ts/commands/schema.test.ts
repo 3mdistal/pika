@@ -69,7 +69,7 @@ describe('schema command', () => {
       expect(result.stdout).toContain('Type: idea');
       expect(result.stdout).toContain('Output Dir:');
       expect(result.stdout).toContain('Ideas');
-      expect(result.stdout).toContain('Fields:');
+      expect(result.stdout).toContain('Own fields:');
     });
 
     it('should show fields for type', async () => {
@@ -112,6 +112,220 @@ describe('schema command', () => {
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('Unknown type');
+    });
+
+    it('should show "(none)" when type has no own fields', async () => {
+      // Create a v2 schema with a type that has no own fields
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-noownfields-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {
+              fields: {
+                created: { prompt: 'date', required: true }
+              }
+            },
+            note: {
+              extends: 'meta'
+              // No own fields - inherits only from meta
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'show', 'note'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Own fields:');
+        expect(result.stdout).toContain('(none)');
+        expect(result.stdout).toContain('Inherited fields (from meta):');
+        expect(result.stdout).toContain('created');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should show "(none)" when type has no inherited fields', async () => {
+      // meta type has no parent, so no inherited fields
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-noinherited-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {
+              fields: {
+                created: { prompt: 'date', required: true }
+              }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'show', 'meta'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Own fields:');
+        expect(result.stdout).toContain('created');
+        expect(result.stdout).toContain('Inherited fields:');
+        expect(result.stdout).toMatch(/Inherited fields:\s*\n\s*\(none\)/);
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should group inherited fields by origin type', async () => {
+      // Create a v2 schema with a 3-level inheritance chain
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-inheritance-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          enums: { status: ['raw', 'done'] },
+          types: {
+            meta: {
+              fields: {
+                created: { prompt: 'date', required: true }
+              }
+            },
+            objective: {
+              extends: 'meta',
+              fields: {
+                status: { prompt: 'select', enum: 'status' }
+              }
+            },
+            task: {
+              extends: 'objective',
+              fields: {
+                deadline: { prompt: 'input' }
+              }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'show', 'task'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Own fields:');
+        expect(result.stdout).toContain('deadline');
+        expect(result.stdout).toContain('Inherited fields (from objective):');
+        expect(result.stdout).toContain('status');
+        expect(result.stdout).toContain('Inherited fields (from meta):');
+        expect(result.stdout).toContain('created');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('schema show <type> --output json', () => {
+    it('should include own_fields and inherited_fields in JSON output', async () => {
+      // Create a v2 schema with inheritance
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-json-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          enums: { status: ['raw', 'done'] },
+          types: {
+            meta: {
+              fields: {
+                created: { prompt: 'date', required: true }
+              }
+            },
+            task: {
+              extends: 'meta',
+              fields: {
+                status: { prompt: 'select', enum: 'status' }
+              }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'show', 'task', '-o', 'json'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        const json = JSON.parse(result.stdout);
+        
+        // Should have own_fields
+        expect(json.own_fields).toBeDefined();
+        expect(json.own_fields.status).toBeDefined();
+        expect(json.own_fields.status.type).toBe('select');
+        
+        // Should have inherited_fields grouped by origin
+        expect(json.inherited_fields).toBeDefined();
+        expect(json.inherited_fields.meta).toBeDefined();
+        expect(json.inherited_fields.meta.created).toBeDefined();
+        expect(json.inherited_fields.meta.created.type).toBe('date');
+        expect(json.inherited_fields.meta.created.required).toBe(true);
+        
+        // Should also have fields (backwards compatible merged fields)
+        expect(json.fields).toBeDefined();
+        expect(json.fields.status).toBeDefined();
+        expect(json.fields.created).toBeDefined();
+        
+        // Should have extends
+        expect(json.extends).toBe('meta');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should omit inherited_fields when empty', async () => {
+      // Create a v2 schema where meta has no parent
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-json-noinherit-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {
+              fields: {
+                created: { prompt: 'date' }
+              }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'show', 'meta', '-o', 'json'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        const json = JSON.parse(result.stdout);
+        
+        // Should have own_fields
+        expect(json.own_fields).toBeDefined();
+        expect(json.own_fields.created).toBeDefined();
+        
+        // Should NOT have inherited_fields (since empty)
+        expect(json.inherited_fields).toBeUndefined();
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should include extends field in JSON output', async () => {
+      const result = await runCLI(['schema', 'show', 'idea', '-o', 'json'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      
+      // Extends should be present (meta in this case, from v1 conversion)
+      expect(json.extends).toBe('meta');
     });
   });
 

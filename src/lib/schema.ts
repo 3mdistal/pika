@@ -1087,3 +1087,119 @@ export function resolveSourceType(
       `Available types: ${availableTypes.join(', ')}`,
   };
 }
+
+// ============================================================================
+// Field Origin Tracking (for schema show inheritance display)
+// ============================================================================
+
+/**
+ * Fields grouped by their origin type.
+ * Used by `schema show` to display own vs inherited fields.
+ */
+export interface FieldsByOrigin {
+  /** Fields defined directly on this type */
+  ownFields: Record<string, Field>;
+  /** Fields inherited from ancestors, grouped by the type that defined them */
+  inheritedFields: Map<string, Record<string, Field>>;
+}
+
+/**
+ * Get fields for a type grouped by their origin (own vs inherited).
+ * 
+ * This function analyzes where each field in a type's effective field set
+ * was originally defined, grouping them into:
+ * - ownFields: fields defined directly in this type's raw schema
+ * - inheritedFields: fields from ancestors, keyed by the ancestor that defined them
+ * 
+ * @param schema The loaded schema
+ * @param typeName The type to analyze
+ * @returns Fields grouped by origin
+ */
+export function getFieldsByOrigin(
+  schema: LoadedSchema,
+  typeName: string
+): FieldsByOrigin {
+  const type = getType(schema, typeName);
+  if (!type) {
+    return { ownFields: {}, inheritedFields: new Map() };
+  }
+
+  // Get raw type definition to find own fields
+  const rawType = schema.raw.types[typeName];
+  const ownFieldNames = new Set(Object.keys(rawType?.fields ?? {}));
+
+  const ownFields: Record<string, Field> = {};
+  const inheritedFields = new Map<string, Record<string, Field>>();
+
+  // Get effective (merged) fields from the resolved type
+  const effectiveFields = type.fields;
+
+  for (const [fieldName, field] of Object.entries(effectiveFields)) {
+    if (ownFieldNames.has(fieldName)) {
+      ownFields[fieldName] = field;
+    } else {
+      // Find which ancestor defined this field
+      const origin = findFieldOrigin(schema, type.ancestors, fieldName);
+      if (origin) {
+        if (!inheritedFields.has(origin)) {
+          inheritedFields.set(origin, {});
+        }
+        inheritedFields.get(origin)![fieldName] = field;
+      }
+    }
+  }
+
+  return { ownFields, inheritedFields };
+}
+
+/**
+ * Find which ancestor type originally defined a field.
+ * Walks the ancestor chain from parent to root, returning the first
+ * type that has this field in its raw definition.
+ */
+function findFieldOrigin(
+  schema: LoadedSchema,
+  ancestors: string[],
+  fieldName: string
+): string | undefined {
+  // Walk ancestors from parent to root
+  for (const ancestorName of ancestors) {
+    const rawAncestor = schema.raw.types[ancestorName];
+    if (rawAncestor?.fields?.[fieldName]) {
+      return ancestorName;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Get the field order for a specific origin type's fields.
+ * Returns fields in the order they were defined on that type.
+ */
+export function getFieldOrderForOrigin(
+  schema: LoadedSchema,
+  originTypeName: string,
+  fieldNames: string[]
+): string[] {
+  const originType = schema.types.get(originTypeName);
+  if (!originType) {
+    return fieldNames;
+  }
+
+  // Use the origin type's field order to sort
+  const orderedFields: string[] = [];
+  for (const fieldName of originType.fieldOrder) {
+    if (fieldNames.includes(fieldName)) {
+      orderedFields.push(fieldName);
+    }
+  }
+
+  // Add any remaining fields not in the explicit order
+  for (const fieldName of fieldNames) {
+    if (!orderedFields.includes(fieldName)) {
+      orderedFields.push(fieldName);
+    }
+  }
+
+  return orderedFields;
+}
