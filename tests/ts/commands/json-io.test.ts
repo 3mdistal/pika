@@ -127,7 +127,7 @@ describe('JSON I/O', () => {
     describe('with _body', () => {
       it('should create note with body sections from _body field', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Test Task',
             _body: {
               Steps: ['Step 1', 'Step 2', 'Step 3'],
@@ -150,7 +150,7 @@ describe('JSON I/O', () => {
 
       it('should handle string content for paragraphs section', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Notes Task',
             _body: {
               Notes: 'This is a paragraph of notes about the task.',
@@ -171,7 +171,7 @@ describe('JSON I/O', () => {
 
       it('should handle multiple body sections', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Multi Section Task',
             _body: {
               Steps: ['Step A', 'Step B'],
@@ -196,7 +196,7 @@ describe('JSON I/O', () => {
 
       it('should error on unknown body section', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Bad Section Task',
             _body: {
               UnknownSection: ['Item'],
@@ -214,7 +214,7 @@ describe('JSON I/O', () => {
 
       it('should error when _body is not an object', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Bad Body Task',
             _body: 'not an object',
           })],
@@ -229,7 +229,7 @@ describe('JSON I/O', () => {
 
       it('should error when _body is an array', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Array Body Task',
             _body: ['not', 'valid'],
           })],
@@ -244,7 +244,7 @@ describe('JSON I/O', () => {
 
       it('should handle empty _body object', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Empty Body Task',
             _body: {},
           })],
@@ -262,7 +262,7 @@ describe('JSON I/O', () => {
 
       it('should handle null _body', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Null Body Task',
             _body: null,
           })],
@@ -276,7 +276,7 @@ describe('JSON I/O', () => {
 
       it('should not include _body in frontmatter', async () => {
         const result = await runCLI(
-          ['new', 'objective/task', '--json', JSON.stringify({
+          ['new', 'task', '--json', JSON.stringify({
             'name': 'Body Not In FM',
             _body: {
               Steps: ['Step 1'],

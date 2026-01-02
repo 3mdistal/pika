@@ -622,25 +622,25 @@ async function resolveTypePath(
     typePath = selected;
   }
 
-  // Navigate through subtypes
+  // Navigate through subtypes (children in v2)
   let typeDef = getTypeDefByPath(schema, typePath);
-  let currentSegment = typePath.split('/').pop() ?? typePath;
+  let currentTypeName = typePath;
 
   while (typeDef && hasSubtypes(typeDef)) {
     const subtypes = getSubtypeKeys(typeDef);
-    const discLabel = discriminatorName(currentSegment);
+    const discLabel = discriminatorName(currentTypeName);
     const selected = await promptSelection(
-      `Select ${currentSegment} subtype (${discLabel}):`,
+      `Select ${currentTypeName} subtype (${discLabel}):`,
       subtypes
     );
     if (!selected) return undefined;
 
-    typePath = `${typePath}/${selected}`;
-    typeDef = getTypeDefByPath(schema, typePath);
-    currentSegment = selected;
+    // In v2, children are just type names, not paths
+    currentTypeName = selected;
+    typeDef = getTypeDefByPath(schema, currentTypeName);
   }
 
-  return typePath;
+  return currentTypeName;
 }
 
 /**

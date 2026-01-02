@@ -175,7 +175,7 @@ describe('vault', () => {
     });
 
     it('should return output_dir for nested type', () => {
-      const dir = getOutputDir(schema, 'objective/task');
+      const dir = getOutputDir(schema, 'task');
       expect(dir).toBe('Objectives/Tasks');
     });
 

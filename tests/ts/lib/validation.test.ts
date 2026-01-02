@@ -88,7 +88,7 @@ describe('validation', () => {
     it('should validate date format', () => {
       // Note: date validation only happens for fields with prompt: 'date'
       // The test schema's deadline field may use 'input' prompt instead
-      const result = validateFrontmatter(schema, 'objective/task', {
+      const result = validateFrontmatter(schema, 'task', {
         type: 'objective',
         'objective-type': 'task',
         status: 'raw',
@@ -106,7 +106,7 @@ describe('validation', () => {
     });
 
     it('should accept valid date format', () => {
-      const result = validateFrontmatter(schema, 'objective/task', {
+      const result = validateFrontmatter(schema, 'task', {
         type: 'objective',
         'objective-type': 'task',
         status: 'raw',
@@ -117,7 +117,7 @@ describe('validation', () => {
     });
 
     it('should accept datetime format', () => {
-      const result = validateFrontmatter(schema, 'objective/task', {
+      const result = validateFrontmatter(schema, 'task', {
         type: 'objective',
         'objective-type': 'task',
         status: 'raw',

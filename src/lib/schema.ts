@@ -2,17 +2,11 @@ import { readFile } from 'fs/promises';
 import { join } from 'path';
 import {
   PikaSchema,
-  LegacyPikaSchema,
   type Schema,
-  type Type,
   type Field,
   type BodySection,
   type ResolvedType,
   type LoadedSchema,
-  type LegacySchema,
-  type LegacyType,
-  type LegacySubtype,
-  type FieldOverride,
   type OwnershipMap,
   type OwnedFieldInfo,
   type OwnerInfo,
@@ -65,26 +59,15 @@ function autoPluralise(singular: string): string {
 
 /**
  * Load, validate, and resolve a schema from a vault directory.
- * This handles both v1 (legacy) and v2 (inheritance) schema formats.
  */
 export async function loadSchema(vaultDir: string): Promise<LoadedSchema> {
   const schemaPath = join(vaultDir, SCHEMA_PATH);
   const content = await readFile(schemaPath, 'utf-8');
   const json = JSON.parse(content) as unknown;
   
-  // Detect schema version and parse accordingly
-  const version = (json as { version?: number }).version;
-  
-  if (version === 1 || isLegacySchema(json)) {
-    // Parse as legacy schema and convert
-    const legacySchema = LegacyPikaSchema.parse(json);
-    const schema = convertLegacySchema(legacySchema);
-    return resolveSchema(schema);
-  } else {
-    // Parse as v2 schema
-    const schema = PikaSchema.parse(json);
-    return resolveSchema(schema);
-  }
+  // Parse as v2 schema
+  const schema = PikaSchema.parse(json);
+  return resolveSchema(schema);
 }
 
 /**
@@ -97,31 +80,7 @@ export async function loadRawSchema(vaultDir: string): Promise<Schema> {
   return PikaSchema.parse(json);
 }
 
-/**
- * Check if a JSON object looks like a legacy (v1) schema.
- */
-function isLegacySchema(json: unknown): boolean {
-  if (typeof json !== 'object' || json === null) return false;
-  const obj = json as Record<string, unknown>;
-  
-  // Check for legacy indicators
-  if (obj.shared_fields) return true;
-  
-  // Check if any type has 'subtypes' or 'frontmatter' (legacy) vs 'extends' or 'fields' (v2)
-  const types = obj.types as Record<string, unknown> | undefined;
-  if (types) {
-    for (const typeDef of Object.values(types)) {
-      if (typeof typeDef === 'object' && typeDef !== null) {
-        const t = typeDef as Record<string, unknown>;
-        if (t.subtypes || t.frontmatter || t.shared_fields || t.field_overrides) {
-          return true;
-        }
-      }
-    }
-  }
-  
-  return false;
-}
+
 
 // ============================================================================
 // Schema Resolution (Inheritance Tree Building)
@@ -299,16 +258,21 @@ function computeEffectiveFields(
     }
   }
   
-  // Apply type's own fields (can override 'default' of inherited fields)
+  // Apply type's own fields (can override inherited fields in specific ways)
   const rawType = type as { fields?: Record<string, Field> };
   if (rawType.fields) {
     for (const [fieldName, fieldDef] of Object.entries(rawType.fields)) {
       if (fields[fieldName]) {
-        // Field exists from ancestor - only allow 'default' override
+        // Field exists from ancestor
+        // Allow 'default' override per spec
         if (fieldDef.default !== undefined) {
           fields[fieldName] = { ...fields[fieldName], default: fieldDef.default };
         }
-        // Note: per spec, other properties cannot be overridden
+        // Also allow 'value' override - this is needed for type identity fields
+        // where each type has its own fixed value (e.g., type: task vs type: objective)
+        if (fieldDef.value !== undefined) {
+          fields[fieldName] = { ...fields[fieldName], value: fieldDef.value };
+        }
       } else {
         // New field
         fields[fieldName] = { ...fieldDef };
@@ -420,122 +384,7 @@ function buildOwnershipMap(types: Map<string, ResolvedType>): OwnershipMap {
   return { canBeOwnedBy, owns };
 }
 
-// ============================================================================
-// Legacy Schema Conversion
-// ============================================================================
 
-/**
- * Convert a legacy (v1) schema to the new (v2) format.
- */
-function convertLegacySchema(legacy: LegacySchema): Schema {
-  // Error if schema uses dynamic_sources (removed in v2)
-  if (legacy.dynamic_sources && Object.keys(legacy.dynamic_sources).length > 0) {
-    const sourceNames = Object.keys(legacy.dynamic_sources).join(', ');
-    throw new Error(
-      `Schema uses 'dynamic_sources' which has been removed.\n\n` +
-      `Found: ${sourceNames}\n\n` +
-      `Migration: Replace 'source: "${Object.keys(legacy.dynamic_sources)[0]}"' with type-based sources.\n` +
-      `Instead of referencing a named dynamic_source, set 'source' to the type name directly\n` +
-      `and add 'filter' to the field if needed.\n\n` +
-      `Before:\n` +
-      `  dynamic_sources:\n` +
-      `    active_milestones:\n` +
-      `      dir: "Objectives/Milestones"\n` +
-      `      filter: { status: { not_in: ["settled"] } }\n` +
-      `  fields:\n` +
-      `    milestone: { source: "active_milestones" }\n\n` +
-      `After:\n` +
-      `  fields:\n` +
-      `    milestone:\n` +
-      `      source: "milestone"\n` +
-      `      filter: { status: { not_in: ["settled"] } }`
-    );
-  }
-  
-  const types: Record<string, Type> = {};
-  
-  // Convert each top-level type and its subtypes
-  for (const [name, legacyType] of Object.entries(legacy.types)) {
-    convertLegacyType(types, name, legacyType, undefined, legacy);
-  }
-  
-  return {
-    version: 2,
-    enums: legacy.enums,
-    types,
-    audit: legacy.audit,
-  };
-}
-
-/**
- * Recursively convert a legacy type and its subtypes.
- */
-function convertLegacyType(
-  types: Record<string, Type>,
-  name: string,
-  legacyType: LegacyType | LegacySubtype,
-  parentName: string | undefined,
-  schema: LegacySchema
-): void {
-  // Convert frontmatter to fields, applying shared fields and overrides
-  let fields: Record<string, Field> = {};
-  
-  // First, apply shared fields (legacy model)
-  const sharedFieldNames = (legacyType as { shared_fields?: string[] }).shared_fields ?? [];
-  if (schema.shared_fields && sharedFieldNames.length > 0) {
-    for (const fieldName of sharedFieldNames) {
-      const sharedField = schema.shared_fields[fieldName];
-      if (sharedField) {
-        fields[fieldName] = { ...sharedField };
-      }
-    }
-  }
-  
-  // Apply field overrides
-  const overrides = (legacyType as { field_overrides?: Record<string, FieldOverride> }).field_overrides ?? {};
-  for (const [fieldName, override] of Object.entries(overrides)) {
-    if (fields[fieldName]) {
-      fields[fieldName] = {
-        ...fields[fieldName],
-        ...(override.default !== undefined && { default: override.default }),
-        ...(override.required !== undefined && { required: override.required }),
-        ...(override.label !== undefined && { label: override.label }),
-      };
-    }
-  }
-  
-  // Add type's own frontmatter fields
-  const frontmatter = (legacyType as { frontmatter?: Record<string, Field> }).frontmatter;
-  if (frontmatter) {
-    // Filter out discriminator fields (type, {parent}-type)
-    for (const [fieldName, fieldDef] of Object.entries(frontmatter)) {
-      if (fieldName === 'type' || fieldName.endsWith('-type')) {
-        continue; // Skip legacy discriminator fields
-      }
-      fields[fieldName] = { ...fieldDef };
-    }
-  }
-  
-  // Create the new type
-  types[name] = {
-    extends: parentName,
-    fields: Object.keys(fields).length > 0 ? fields : undefined,
-    field_order: (legacyType as { frontmatter_order?: string[] }).frontmatter_order?.filter(
-      f => f !== 'type' && !f.endsWith('-type')
-    ),
-    body_sections: legacyType.body_sections,
-    output_dir: legacyType.output_dir,
-    filename: (legacyType as { filename?: string }).filename,
-  };
-  
-  // Recursively convert subtypes
-  const subtypes = (legacyType as { subtypes?: Record<string, LegacySubtype> }).subtypes;
-  if (subtypes) {
-    for (const [subtypeName, subtype] of Object.entries(subtypes)) {
-      convertLegacyType(types, subtypeName, subtype, name, schema);
-    }
-  }
-}
 
 // ============================================================================
 // Type Lookup (New API)
@@ -543,13 +392,9 @@ function convertLegacyType(
 
 /**
  * Get a resolved type by name.
- * Accepts both type names (e.g., "task") and legacy paths (e.g., "objective/task").
  */
 export function getType(schema: LoadedSchema, typeName: string): ResolvedType | undefined {
-  // Handle legacy path format (e.g., "objective/task" -> "task")
-  const segments = typeName.split('/').filter(Boolean);
-  const resolvedName = segments[segments.length - 1] ?? typeName;
-  return schema.types.get(resolvedName);
+  return schema.types.get(typeName);
 }
 
 /**
@@ -614,7 +459,6 @@ export function getEnumValues(schema: LoadedSchema, enumName: string): string[] 
 
 /**
  * Get the effective fields for a type (already computed).
- * Accepts both type names (e.g., "task") and legacy paths (e.g., "objective/task").
  */
 export function getFieldsForType(schema: LoadedSchema, typeName: string): Record<string, Field> {
   const type = getType(schema, typeName);
@@ -623,7 +467,6 @@ export function getFieldsForType(schema: LoadedSchema, typeName: string): Record
 
 /**
  * Get the field order for a type (already computed).
- * Accepts both type names (e.g., "task") and legacy paths (e.g., "objective/task").
  */
 export function getFieldOrder(schema: LoadedSchema, typeName: string): string[] {
   const type = getType(schema, typeName);
@@ -656,8 +499,7 @@ export function getBodySections(schema: LoadedSchema, typeName: string): BodySec
 
 /**
  * Resolve a type name from frontmatter.
- * Handles both new-style (single 'type' field) and legacy-style
- * (type + parent-type discriminator fields) frontmatter.
+ * Uses the 'type' field to identify the type.
  */
 export function resolveTypeFromFrontmatter(
   schema: LoadedSchema,
@@ -666,16 +508,7 @@ export function resolveTypeFromFrontmatter(
   const typeName = frontmatter['type'];
   if (typeof typeName !== 'string') return undefined;
   
-  // First, check for legacy-style discriminator fields
-  // e.g., type: objective, objective-type: task -> returns 'task'
-  // This must be checked first because the parent type also exists in the schema
-  const childTypeField = `${typeName}-type`;
-  const childTypeName = frontmatter[childTypeField];
-  if (typeof childTypeName === 'string' && schema.types.has(childTypeName)) {
-    return childTypeName;
-  }
-  
-  // Check if the type itself exists (new-style or leaf type)
+  // Check if the type exists in the schema
   if (schema.types.has(typeName)) {
     return typeName;
   }
@@ -686,7 +519,6 @@ export function resolveTypeFromFrontmatter(
 /**
  * Get all valid field names for a type and its descendants.
  * Useful for filter validation.
- * Accepts both type names (e.g., "task") and legacy paths (e.g., "objective/task").
  */
 export function getAllFieldsForType(schema: LoadedSchema, typeName: string): Set<string> {
   const fields = new Set<string>();
@@ -735,16 +567,10 @@ export function getEnumForField(
  * 1. If the type has an explicit output_dir, use it
  * 2. If an ancestor has an explicit output_dir, use it
  * 3. Otherwise, compute from type hierarchy using pluralized names
- * 
- * Accepts both type names (e.g., "task") and legacy paths (e.g., "objective/task").
  */
 export function getOutputDir(schema: LoadedSchema, typeName: string): string {
-  // Handle legacy path format (e.g., "objective/task" -> "task")
-  const segments = typeName.split('/').filter(Boolean);
-  const resolvedName = segments[segments.length - 1] ?? typeName;
-  
-  const type = schema.types.get(resolvedName);
-  if (!type) return autoPluralise(resolvedName); // Fallback for unknown types
+  const type = schema.types.get(typeName);
+  if (!type) return autoPluralise(typeName); // Fallback for unknown types
   
   // If type has explicit output_dir, use it
   if (type.outputDir) return type.outputDir;
@@ -756,7 +582,7 @@ export function getOutputDir(schema: LoadedSchema, typeName: string): string {
   }
   
   // No explicit output_dir found - compute from type hierarchy
-  return computeDefaultOutputDir(schema, resolvedName);
+  return computeDefaultOutputDir(schema, typeName);
 }
 
 /**
@@ -813,20 +639,17 @@ export function getTypeFamilies(schema: LoadedSchema): string[] {
 }
 
 /**
- * @deprecated Type paths are no longer used
+ * @deprecated Type paths are no longer used. Just returns [typeName].
  */
 export function parseTypePath(typePath: string): string[] {
-  return typePath.split('/').filter(Boolean);
+  return [typePath];
 }
 
 /**
  * @deprecated Use getType(schema, typeName) instead
  */
 export function getTypeDefByPath(schema: LoadedSchema, typePath: string): ResolvedType | undefined {
-  // For backward compatibility, handle both paths and names
-  const segments = parseTypePath(typePath);
-  const typeName = segments[segments.length - 1];
-  return typeName ? schema.types.get(typeName) : undefined;
+  return schema.types.get(typePath);
 }
 
 /**
@@ -882,11 +705,9 @@ export function resolveTypePathFromFrontmatter(
  * @deprecated Use single 'type' field
  */
 export function getDiscriminatorFieldsFromTypePath(
-  typePath: string
+  typeName: string
 ): Record<string, string> {
-  const segments = parseTypePath(typePath);
-  const typeName = segments[segments.length - 1];
-  return typeName ? { type: typeName } : {};
+  return { type: typeName };
 }
 
 // ============================================================================
@@ -1016,7 +837,6 @@ function findEnumContainingValue(schema: LoadedSchema, value: string): string | 
  * 
  * This function validates that a source type exists and provides
  * actionable error messages when it doesn't, including:
- * - Detecting path format usage (e.g., "entity/person")
  * - Detecting enum value confusion (e.g., "person" being an enum value, not a type)
  * - Suggesting similar type names for typos
  * - Listing available types when no close match is found
@@ -1032,25 +852,26 @@ export function resolveSourceType(
 
   const availableTypes = getConcreteTypeNames(schema);
 
-  // Check for path format (legacy subtype syntax like "entity/person")
+  // Check for old path format (e.g., "note/task" or "foo/bar")
+  // V2 uses flat type names, not paths
   if (source.includes('/')) {
-    const segments = source.split('/');
-    const lastSegment = segments[segments.length - 1];
-
-    if (lastSegment && schema.types.has(lastSegment)) {
-      // The last segment is a valid type - suggest using it directly
+    const parts = source.split('/');
+    const lastPart = parts[parts.length - 1] ?? '';
+    
+    // Check if the last segment is a valid type
+    if (lastPart && schema.types.has(lastPart)) {
       return {
         success: false,
-        error: `Source "${source}" uses path format. Use just the type name: "${lastSegment}"`,
-        suggestions: [lastSegment],
+        error: `Source "${source}" uses path format which is no longer supported.\n` +
+          `Use just the type name: "${lastPart}"`,
+        suggestions: [lastPart],
       };
     }
-
-    // Path format but neither segment is a valid type
+    
+    // Neither segment is valid - generic path format error
     return {
       success: false,
-      error: `Source "${source}" uses path format which is not supported. ` +
-        `In v2 schemas, specify the type name directly.\n` +
+      error: `Source "${source}" uses path format which is not supported.\n` +
         `Available types: ${availableTypes.join(', ')}`,
     };
   }

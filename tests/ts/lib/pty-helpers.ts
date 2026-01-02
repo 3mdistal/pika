@@ -330,7 +330,7 @@ export class PtyProcess {
  *
  * @example
  * ```ts
- * const proc = await spawnPika(['new', 'objective/task'], { cwd: testVaultPath });
+ * const proc = await spawnPika(['new', 'task'], { cwd: testVaultPath });
  * await proc.waitFor('Name');
  * proc.write('My Task\r');
  * ```
@@ -438,7 +438,7 @@ export const withOvault = withPika;
  */
 export const MINIMAL_SCHEMA = {
   $schema: '../../../schema.schema.json',
-  version: 1,
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
     priority: ['low', 'medium', 'high'],
@@ -446,12 +446,12 @@ export const MINIMAL_SCHEMA = {
   types: {
     idea: {
       output_dir: 'Ideas',
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
         status: { prompt: 'select', enum: 'status', default: 'raw' },
         priority: { prompt: 'select', enum: 'priority' },
       },
-      frontmatter_order: ['type', 'status', 'priority'],
+      field_order: ['type', 'status', 'priority'],
     },
   },
 };

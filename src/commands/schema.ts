@@ -929,7 +929,7 @@ function outputTypeDetailsJson(schema: LoadedSchema, typePath: string): void {
  */
 function formatTypeForJson(
   schema: LoadedSchema,
-  typePath: string,
+  _typePath: string,
   typeDef: ResolvedType
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {
@@ -940,10 +940,11 @@ function formatTypeForJson(
   if (hasSubtypes(typeDef)) {
     result.subtypes = Object.fromEntries(
       getSubtypeKeys(typeDef).map(subtype => {
-        const childTypeDef = getTypeDefByPath(schema, `${typePath}/${subtype}`);
+        // In v2, children are just type names, not paths
+        const childTypeDef = getTypeDefByPath(schema, subtype);
         return [
           subtype,
-          childTypeDef ? formatTypeForJson(schema, `${typePath}/${subtype}`, childTypeDef) : {},
+          childTypeDef ? formatTypeForJson(schema, subtype, childTypeDef) : {},
         ];
       })
     );
@@ -1054,9 +1055,10 @@ function printTypeTree(
   // Show subtypes (children in new model)
   if (hasSubtypes(typeDef)) {
     for (const subtype of getSubtypeKeys(typeDef)) {
-      const subDef = getTypeDefByPath(schema, `${typePath}/${subtype}`);
+      // In v2, children are just type names, not paths
+      const subDef = getTypeDefByPath(schema, subtype);
       if (subDef) {
-        printTypeTree(schema, `${typePath}/${subtype}`, subDef, depth + 1);
+        printTypeTree(schema, subtype, subDef, depth + 1);
       }
     }
   }

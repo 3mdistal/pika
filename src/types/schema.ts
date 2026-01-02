@@ -57,15 +57,7 @@ export const BodySectionSchema: z.ZodType<BodySection, z.ZodTypeDef, BodySection
   })
 );
 
-// ============================================================================
-// Dynamic Sources (Legacy - REMOVED, kept only for migration error messages)
-// ============================================================================
 
-// Dynamic source definition (legacy - for error detection only)
-export const DynamicSourceSchema = z.object({
-  dir: z.string(),
-  filter: z.record(FilterConditionSchema).optional(),
-});
 
 // ============================================================================
 // Type Definition (New Inheritance Model)
@@ -155,7 +147,6 @@ export type BodySectionInput = {
   children?: BodySectionInput[] | undefined;
 };
 export type FilterCondition = z.infer<typeof FilterConditionSchema>;
-export type DynamicSource = z.infer<typeof DynamicSourceSchema>;
 export type Type = z.infer<typeof TypeSchema>;
 export type Schema = z.infer<typeof PikaSchema>;
 
@@ -330,89 +321,4 @@ export interface Template {
   body: string;
 }
 
-// ============================================================================
-// Legacy Types (For Migration Support)
-// ============================================================================
 
-/**
- * Field override definition (legacy - for old shared_fields model).
- * @deprecated Use field inheritance instead
- */
-export const FieldOverrideSchema = z.object({
-  default: z.union([z.string(), z.array(z.string())]).optional(),
-  required: z.boolean().optional(),
-  label: z.string().optional(),
-});
-
-export type FieldOverride = z.infer<typeof FieldOverrideSchema>;
-
-/**
- * Legacy subtype definition (for v1 schema migration).
- * @deprecated Use flat types with 'extends' instead
- */
-export const LegacySubtypeSchema: z.ZodType<LegacySubtype, z.ZodTypeDef, LegacySubtypeInput> = z.lazy(() =>
-  z.object({
-    output_dir: z.string().optional(),
-    filename: z.string().optional(),
-    shared_fields: z.array(z.string()).optional(),
-    field_overrides: z.record(FieldOverrideSchema).optional(),
-    frontmatter: z.record(FieldSchema).optional(),
-    frontmatter_order: z.array(z.string()).optional(),
-    body_sections: z.array(BodySectionSchema).optional(),
-    subtypes: z.record(LegacySubtypeSchema).optional(),
-  })
-);
-
-/**
- * Legacy type definition (for v1 schema migration).
- * @deprecated Use flat types with 'extends' instead
- */
-export const LegacyTypeSchema = z.object({
-  output_dir: z.string().optional(),
-  dir_mode: z.enum(['pooled', 'instance-grouped']).optional().default('pooled'),
-  shared_fields: z.array(z.string()).optional(),
-  field_overrides: z.record(FieldOverrideSchema).optional(),
-  frontmatter: z.record(FieldSchema).optional(),
-  frontmatter_order: z.array(z.string()).optional(),
-  body_sections: z.array(BodySectionSchema).optional(),
-  subtypes: z.record(LegacySubtypeSchema).optional(),
-});
-
-/**
- * Legacy schema (v1 format with nested subtypes).
- * @deprecated Use PikaSchema (v2) instead
- */
-export const LegacyPikaSchema = z.object({
-  version: z.literal(1).optional(),
-  shared_fields: z.record(FieldSchema).optional(),
-  enums: z.record(z.array(z.string())).optional(),
-  dynamic_sources: z.record(DynamicSourceSchema).optional(),
-  types: z.record(LegacyTypeSchema),
-  audit: AuditConfigSchema.optional(),
-});
-
-export type LegacySubtype = {
-  output_dir?: string | undefined;
-  filename?: string | undefined;
-  shared_fields?: string[] | undefined;
-  field_overrides?: Record<string, FieldOverride> | undefined;
-  frontmatter?: Record<string, Field> | undefined;
-  frontmatter_order?: string[] | undefined;
-  body_sections?: BodySection[] | undefined;
-  subtypes?: Record<string, LegacySubtype> | undefined;
-};
-export type LegacySubtypeInput = {
-  output_dir?: string | undefined;
-  filename?: string | undefined;
-  shared_fields?: string[] | undefined;
-  field_overrides?: Record<string, FieldOverride> | undefined;
-  frontmatter?: Record<string, Field> | undefined;
-  frontmatter_order?: string[] | undefined;
-  body_sections?: BodySectionInput[] | undefined;
-  subtypes?: Record<string, LegacySubtypeInput> | undefined;
-};
-export type LegacyType = z.infer<typeof LegacyTypeSchema>;
-export type LegacySchema = z.infer<typeof LegacyPikaSchema>;
-
-// Type definition union for backward compatibility
-export type TypeDef = Type | LegacyType | LegacySubtype;

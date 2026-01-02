@@ -21,20 +21,7 @@ export function getRelativeVaultPath(vaultDir: string): string {
 }
 
 export const TEST_SCHEMA = {
-  version: 1,
-  shared_fields: {
-    status: {
-      prompt: 'select',
-      enum: 'status',
-      default: 'raw',
-      required: true,
-    },
-    tags: {
-      prompt: 'multi-input',
-      list_format: 'yaml-array',
-      default: [],
-    },
-  },
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
     priority: ['low', 'medium', 'high'],
@@ -42,50 +29,69 @@ export const TEST_SCHEMA = {
   types: {
     objective: {
       output_dir: 'Objectives',
-      subtypes: {
-        task: {
-          output_dir: 'Objectives/Tasks',
-          shared_fields: ['status', 'tags'],
-          field_overrides: {
-            status: { default: 'backlog' },
-          },
-          frontmatter: {
-            type: { value: 'objective' },
-            'objective-type': { value: 'task' },
-            milestone: {
-              prompt: 'dynamic',
-              source: 'milestone',
-              filter: { status: { not_in: ['settled'] } },
-              format: 'quoted-wikilink',
-            },
-            'creation-date': { value: '$NOW' },
-            deadline: { prompt: 'input', label: 'Deadline (YYYY-MM-DD)' },
-          },
-          frontmatter_order: ['type', 'objective-type', 'status', 'milestone', 'creation-date', 'deadline', 'tags'],
-          body_sections: [
-            { title: 'Steps', level: 2, content_type: 'checkboxes', prompt: 'multi-input', prompt_label: 'Steps' },
-            { title: 'Notes', level: 2, content_type: 'paragraphs' },
-          ],
+      fields: {
+        type: { value: 'objective' },
+      },
+      field_order: ['type'],
+    },
+    task: {
+      extends: 'objective',
+      output_dir: 'Objectives/Tasks',
+      fields: {
+        type: { value: 'task' },
+        status: {
+          prompt: 'select',
+          enum: 'status',
+          default: 'backlog',
+          required: true,
         },
         milestone: {
-          output_dir: 'Objectives/Milestones',
-          shared_fields: ['status'],
-          frontmatter: {
-            type: { value: 'objective' },
-            'objective-type': { value: 'milestone' },
-          },
-          frontmatter_order: ['type', 'objective-type', 'status'],
+          prompt: 'dynamic',
+          source: 'milestone',
+          filter: { status: { not_in: ['settled'] } },
+          format: 'quoted-wikilink',
+        },
+        'creation-date': { value: '$NOW' },
+        deadline: { prompt: 'input', label: 'Deadline (YYYY-MM-DD)' },
+        tags: {
+          prompt: 'multi-input',
+          list_format: 'yaml-array',
+          default: [],
         },
       },
+      field_order: ['type', 'status', 'milestone', 'creation-date', 'deadline', 'tags'],
+      body_sections: [
+        { title: 'Steps', level: 2, content_type: 'checkboxes', prompt: 'multi-input', prompt_label: 'Steps' },
+        { title: 'Notes', level: 2, content_type: 'paragraphs' },
+      ],
+    },
+    milestone: {
+      extends: 'objective',
+      output_dir: 'Objectives/Milestones',
+      fields: {
+        type: { value: 'milestone' },
+        status: {
+          prompt: 'select',
+          enum: 'status',
+          default: 'raw',
+          required: true,
+        },
+      },
+      field_order: ['type', 'status'],
     },
     idea: {
       output_dir: 'Ideas',
-      shared_fields: ['status'],
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
+        status: {
+          prompt: 'select',
+          enum: 'status',
+          default: 'raw',
+          required: true,
+        },
         priority: { prompt: 'select', enum: 'priority' },
       },
-      frontmatter_order: ['type', 'status', 'priority'],
+      field_order: ['type', 'status', 'priority'],
     },
   },
   audit: {
@@ -132,8 +138,7 @@ priority: high
   await writeFile(
     join(vaultDir, 'Objectives/Tasks', 'Sample Task.md'),
     `---
-type: objective
-objective-type: task
+type: task
 status: in-flight
 deadline: 2024-01-15
 ---
@@ -147,8 +152,7 @@ deadline: 2024-01-15
   await writeFile(
     join(vaultDir, 'Objectives/Milestones', 'Active Milestone.md'),
     `---
-type: objective
-objective-type: milestone
+type: milestone
 status: in-flight
 ---
 `
@@ -157,8 +161,7 @@ status: in-flight
   await writeFile(
     join(vaultDir, 'Objectives/Milestones', 'Settled Milestone.md'),
     `---
-type: objective
-objective-type: milestone
+type: milestone
 status: settled
 ---
 `
@@ -166,7 +169,7 @@ status: settled
 
   // Create template directories and sample templates in .pika/templates/
   await mkdir(join(vaultDir, '.pika/templates/idea'), { recursive: true });
-  await mkdir(join(vaultDir, '.pika/templates/objective/task'), { recursive: true });
+  await mkdir(join(vaultDir, '.pika/templates/task'), { recursive: true });
 
   await writeFile(
     join(vaultDir, '.pika/templates/idea', 'default.md'),
@@ -194,10 +197,10 @@ defaults:
   );
 
   await writeFile(
-    join(vaultDir, '.pika/templates/objective/task', 'default.md'),
+    join(vaultDir, '.pika/templates/task', 'default.md'),
     `---
 type: template
-template-for: objective/task
+template-for: task
 description: Default task template
 defaults:
   status: backlog
@@ -213,10 +216,10 @@ defaults:
   );
 
   await writeFile(
-    join(vaultDir, '.pika/templates/objective/task', 'bug-report.md'),
+    join(vaultDir, '.pika/templates/task', 'bug-report.md'),
     `---
 type: template
-template-for: objective/task
+template-for: task
 description: Bug report with reproduction steps
 defaults:
   status: backlog
@@ -243,10 +246,10 @@ prompt-fields:
 
   // Template with date expression defaults for testing
   await writeFile(
-    join(vaultDir, '.pika/templates/objective/task', 'weekly-review.md'),
+    join(vaultDir, '.pika/templates/task', 'weekly-review.md'),
     `---
 type: template
-template-for: objective/task
+template-for: task
 description: Weekly review task with auto-deadline
 defaults:
   status: backlog

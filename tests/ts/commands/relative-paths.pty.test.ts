@@ -18,7 +18,7 @@ const describePty = shouldSkipPtyTests() ? describe.skip : describe;
 
 // Schema for testing
 const TEST_SCHEMA = {
-  version: 1,
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
     priority: ['low', 'medium', 'high'],
@@ -26,12 +26,12 @@ const TEST_SCHEMA = {
   types: {
     idea: {
       output_dir: 'Ideas',
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
         status: { prompt: 'select', enum: 'status', default: 'raw' },
         priority: { prompt: 'select', enum: 'priority' },
       },
-      frontmatter_order: ['type', 'status', 'priority'],
+      field_order: ['type', 'status', 'priority'],
     },
   },
 };

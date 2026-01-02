@@ -1,6 +1,6 @@
 ---
 type: template
-template-for: objective/task
+template-for: task
 description: Default task template
 defaults:
   status: backlog

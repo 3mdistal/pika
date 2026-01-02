@@ -22,34 +22,34 @@ const describePty = shouldSkipPtyTests()
 
 // Schema for audit tests
 const AUDIT_SCHEMA = {
-  version: 1,
+  version: 2,
   enums: {
     status: ['raw', 'backlog', 'in-flight', 'settled'],
-    type: ['idea', 'objective'],
-    'objective-type': ['task', 'milestone'],
   },
   types: {
     idea: {
       output_dir: 'Ideas',
-      frontmatter: {
+      fields: {
         type: { value: 'idea' },
         status: { prompt: 'select', enum: 'status', default: 'raw', required: true },
       },
-      frontmatter_order: ['type', 'status'],
+      field_order: ['type', 'status'],
     },
     objective: {
       output_dir: 'Objectives',
-      subtypes: {
-        task: {
-          output_dir: 'Tasks',
-          frontmatter: {
-            type: { value: 'objective' },
-            'objective-type': { value: 'task' },
-            status: { prompt: 'select', enum: 'status', default: 'raw', required: true },
-          },
-          frontmatter_order: ['type', 'objective-type', 'status'],
-        },
+      fields: {
+        type: { value: 'objective' },
       },
+      field_order: ['type'],
+    },
+    task: {
+      extends: 'objective',
+      output_dir: 'Tasks',
+      fields: {
+        type: { value: 'task' },
+        status: { prompt: 'select', enum: 'status', default: 'raw', required: true },
+      },
+      field_order: ['type', 'status'],
     },
   },
 };
@@ -186,11 +186,11 @@ Missing required status.
         types: {
           item: {
             output_dir: 'Items',
-            frontmatter: {
+            fields: {
               type: { value: 'item' },
               category: { prompt: 'select', enum: 'status', required: true }, // No default
             },
-            frontmatter_order: ['type', 'category'],
+            field_order: ['type', 'category'],
           },
         },
       };
@@ -418,11 +418,11 @@ some: value
         types: {
           item: {
             output_dir: 'Items',
-            frontmatter: {
+            fields: {
               type: { value: 'item' },
               link: { prompt: 'input', format: 'wikilink' },
             },
-            frontmatter_order: ['type', 'link'],
+            field_order: ['type', 'link'],
           },
         },
       };
@@ -511,11 +511,11 @@ Auto-fixable orphan.
         types: {
           item: {
             output_dir: 'Items',
-            frontmatter: {
+            fields: {
               type: { value: 'item' },
               category: { prompt: 'select', enum: 'status', required: true },
             },
-            frontmatter_order: ['type', 'category'],
+            field_order: ['type', 'category'],
           },
         },
       };

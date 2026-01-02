@@ -22,15 +22,15 @@ describe('template command', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Templates');
       expect(result.stdout).toContain('idea');
-      expect(result.stdout).toContain('objective/task');
+      expect(result.stdout).toContain('task');
       expect(result.stdout).toContain('default');
     });
 
     it('should filter by type', async () => {
-      const result = await runCLI(['template', 'list', 'objective/task'], vaultDir);
+      const result = await runCLI(['template', 'list', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('objective/task');
+      expect(result.stdout).toContain('task');
       expect(result.stdout).toContain('default');
       expect(result.stdout).toContain('bug-report');
       // Should not contain idea templates
@@ -192,10 +192,10 @@ Body
       // Create a template with valid date expression - use status which is a valid field
       // Date expressions are valid values even for non-date fields
       await writeFile(
-        join(vaultDir, '.pika/templates/objective/task', 'dated.md'),
+        join(vaultDir, '.pika/templates/task', 'dated.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 defaults:
   status: backlog
   deadline: "today() + '7d'"
@@ -216,10 +216,10 @@ Body
     it('should reject invalid date expressions in defaults', async () => {
       // Create a template with invalid date expression syntax
       await writeFile(
-        join(vaultDir, '.pika/templates/objective/task', 'bad-date.md'),
+        join(vaultDir, '.pika/templates/task', 'bad-date.md'),
         `---
 type: template
-template-for: objective/task
+template-for: task
 defaults:
   status: backlog
   deadline: "today( + 7d"
@@ -465,12 +465,12 @@ Body
     });
 
     it('should delete nested subtype templates', async () => {
-      // Test with objective/task template (nested type)
-      const templatePath = join(vaultDir, '.pika/templates/objective/task', 'default.md');
+      // Test with task template (nested type)
+      const templatePath = join(vaultDir, '.pika/templates/task', 'default.md');
       expect(existsSync(templatePath)).toBe(true);
 
       const result = await runCLI([
-        'template', 'delete', 'objective/task', 'default', '--force',
+        'template', 'delete', 'task', 'default', '--force',
       ], vaultDir);
 
       expect(result.exitCode).toBe(0);

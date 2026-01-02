@@ -82,10 +82,10 @@ describe('schema command', () => {
     });
 
     it('should show subtype details with slash notation', async () => {
-      const result = await runCLI(['schema', 'show', 'objective/task'], vaultDir);
+      const result = await runCLI(['schema', 'show', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain('Type: objective/task');
+      expect(result.stdout).toContain('Type: task');
       expect(result.stdout).toContain('Objectives/Tasks');
     });
 
@@ -99,7 +99,7 @@ describe('schema command', () => {
     });
 
     it('should show body sections if defined', async () => {
-      const result = await runCLI(['schema', 'show', 'objective/task'], vaultDir);
+      const result = await runCLI(['schema', 'show', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Body Sections:');

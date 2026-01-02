@@ -29,13 +29,13 @@ describe('audit command', () => {
       expect(result.exitCode).toBe(0);
     });
 
-    it('should audit subtypes', async () => {
-      const result = await runCLI(['audit', 'objective/task'], vaultDir);
+    it('should audit child types', async () => {
+      const result = await runCLI(['audit', 'task'], vaultDir);
 
       expect(result.exitCode).toBe(0);
     });
 
-    it('should audit parent type and all subtypes', async () => {
+    it('should audit parent type and all descendants', async () => {
       const result = await runCLI(['audit', 'objective'], vaultDir);
 
       expect(result.exitCode).toBe(0);
@@ -55,8 +55,8 @@ describe('audit command', () => {
           ...TEST_SCHEMA.types,
           idea: {
             ...TEST_SCHEMA.types.idea,
-            frontmatter: {
-              ...TEST_SCHEMA.types.idea.frontmatter,
+            fields: {
+              ...TEST_SCHEMA.types.idea.fields,
               requiredNoDefault: { prompt: 'input', required: true },
             },
           },
@@ -957,7 +957,7 @@ Task content
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task', '--fix', '--auto'], tempVaultDir);
+      const result = await runCLI(['audit', 'task', '--fix', '--auto'], tempVaultDir);
 
       expect(result.stdout).toContain('Auto-fixing');
       // In the new inheritance model, we use a single 'type: task' field instead of 'type: objective' + 'objective-type: task'
@@ -1115,8 +1115,7 @@ otherField: value
       await writeFile(
         join(tempVaultDir, 'Objectives/Milestones', 'Q1 Release.md'),
         `---
-type: objective
-objective-type: milestone
+type: milestone
 status: in-flight
 ---
 `
@@ -1126,15 +1125,14 @@ status: in-flight
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Bad Format.md'),
         `---
-type: objective
-objective-type: task
+type: task
 status: backlog
 milestone: Q1 Release
 ---
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task', '--output', 'json'], tempVaultDir);
+      const result = await runCLI(['audit', 'task', '--output', 'json'], tempVaultDir);
 
       expect(result.exitCode).toBe(1);
       const output = JSON.parse(result.stdout);
@@ -1152,15 +1150,14 @@ milestone: Q1 Release
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Fixable.md'),
         `---
-type: objective
-objective-type: task
+type: task
 status: backlog
 milestone: Q1 Release
 ---
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task', '--fix', '--auto'], tempVaultDir);
+      const result = await runCLI(['audit', 'task', '--fix', '--auto'], tempVaultDir);
 
       expect(result.stdout).toContain('Fixed');
       expect(result.stdout).toContain('milestone');
@@ -1175,15 +1172,14 @@ milestone: Q1 Release
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Good Format.md'),
         `---
-type: objective
-objective-type: task
+type: task
 status: backlog
 milestone: "[[Q1 Release]]"
 ---
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task'], tempVaultDir);
+      const result = await runCLI(['audit', 'task'], tempVaultDir);
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).not.toContain('format-violation');
@@ -1214,15 +1210,14 @@ milestone: "[[Q1 Release]]"
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Stale Ref.md'),
         `---
-type: objective
-objective-type: task
+type: task
 status: backlog
 milestone: "[[Non Existent Milestone]]"
 ---
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task', '--output', 'json'], tempVaultDir);
+      const result = await runCLI(['audit', 'task', '--output', 'json'], tempVaultDir);
 
       const output = JSON.parse(result.stdout);
       const taskFile = output.files.find((f: { path: string }) => f.path.includes('Stale Ref.md'));
@@ -1294,8 +1289,7 @@ This links to [[Target Note]] which exists.
       await writeFile(
         join(tempVaultDir, 'Objectives/Milestones', 'Q1 Release.md'),
         `---
-type: objective
-objective-type: milestone
+type: milestone
 status: in-flight
 ---
 `
@@ -1305,15 +1299,14 @@ status: in-flight
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Typo Ref.md'),
         `---
-type: objective
-objective-type: task
+type: task
 status: backlog
 milestone: "[[Q1 Relase]]"
 ---
 `
       );
 
-      const result = await runCLI(['audit', 'objective/task', '--output', 'json'], tempVaultDir);
+      const result = await runCLI(['audit', 'task', '--output', 'json'], tempVaultDir);
 
       const output = JSON.parse(result.stdout);
       const taskFile = output.files.find((f: { path: string }) => f.path.includes('Typo Ref.md'));
@@ -1603,39 +1596,34 @@ milestone: "[[Non Existent]]"
       expect(sourceIssue).toBeUndefined();
     });
 
-    it('should reject schemas with legacy dynamic_sources', async () => {
-      // Create a schema with legacy dynamic_sources (removed in v2)
-      const legacySchemaWithDynamicSources = {
-        version: 1,
+    it('should reject schemas with invalid structure', async () => {
+      // Create an invalid schema (missing required 'types' structure)
+      const invalidSchema = {
+        version: 2,
         enums: { status: ['raw', 'done'] },
-        dynamic_sources: {
-          active_items: {
-            dir: 'Items',
-            filter: { status: { not_in: ['done'] } },
-          },
-        },
-        types: {
-          item: {
-            output_dir: 'Items',
-            frontmatter: {
-              type: { value: 'item' },
-              status: { prompt: 'select', enum: 'status', default: 'raw' },
-              ref: { prompt: 'dynamic', source: 'active_items', format: 'wikilink' },
-            },
-            frontmatter_order: ['type', 'status', 'ref'],
-          },
-        },
+        // Missing valid type definitions
+        types: {},
       };
       await writeFile(
         join(tempVaultDir, '.pika', 'schema.json'),
-        JSON.stringify(legacySchemaWithDynamicSources, null, 2)
+        JSON.stringify(invalidSchema, null, 2)
+      );
+
+      // Create a file that would trigger audit
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Test.md'),
+        `---
+type: idea
+status: raw
+---
+`
       );
 
       const result = await runCLI(['audit'], tempVaultDir);
 
-      // Should error because dynamic_sources is no longer supported
+      // Should report invalid type since 'idea' type doesn't exist in this empty schema
       expect(result.exitCode).not.toBe(0);
-      expect(result.stderr).toContain('dynamic_sources');
+      expect(result.stdout).toContain("Invalid type: 'idea'");
     });
 
     it('should validate all values when field has multiple values', async () => {

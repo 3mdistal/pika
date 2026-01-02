@@ -568,7 +568,7 @@ tags:
 
   describe('subtype handling', () => {
     it('should work with subtypes', async () => {
-      const result = await runCLI(['bulk', 'objective/task', '--all', '--set', 'status=settled'], vaultDir);
+      const result = await runCLI(['bulk', 'task', '--all', '--set', 'status=settled'], vaultDir);
       
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Sample Task.md');

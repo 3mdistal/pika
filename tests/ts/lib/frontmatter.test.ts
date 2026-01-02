@@ -39,7 +39,7 @@ describe('frontmatter', () => {
 
     it('should parse note with body content', async () => {
       const note = await parseNote(join(vaultDir, 'Objectives/Tasks', 'Sample Task.md'));
-      expect(note.frontmatter.type).toBe('objective');
+      expect(note.frontmatter.type).toBe('task');
       expect(note.body).toContain('## Steps');
       expect(note.body).toContain('## Notes');
     });

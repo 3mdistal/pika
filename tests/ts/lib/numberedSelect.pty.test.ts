@@ -41,7 +41,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
       // The confirmation line "✔ Select milestone: (skip)" is different - it doesn't
       // have the number prefix, so we can distinguish between render and confirmation.
 
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
@@ -98,7 +98,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
     }, 30000);
 
     it('should show checkmark after number key selection', async () => {
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
@@ -141,7 +141,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
 
   describe('Ctrl+C abort', () => {
     it('should abort cleanly on Ctrl+C during selection', async () => {
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
@@ -184,13 +184,13 @@ describePty('NumberedSelectPrompt PTY tests', () => {
       // "on first render, it called clearPrompt() which erased lines
       //  printed BEFORE the prompt started"
 
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
       try {
-        // Wait for initial output (the "=== New objective ===" header)
-        await proc.waitFor('New objective', 10000);
+        // Wait for initial output (the "=== New task ===" header)
+        await proc.waitFor('New task', 10000);
 
         // The header should remain visible throughout the interaction
         // Enter task name
@@ -201,7 +201,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
 
         // Check that the header is still visible
         const output = proc.getOutput();
-        expect(output).toContain('New objective');
+        expect(output).toContain('New task');
 
         // Also verify "Using template" is still visible
         expect(output).toContain('Using template');
@@ -219,7 +219,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
 
   describe('arrow key navigation', () => {
     it('should navigate with arrow keys without corrupting display', async () => {
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
@@ -267,7 +267,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
       // Fixed behavior: Only update the lines that changed (cursor movement)
       // The hint line should only appear once (in the initial render).
 
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 
@@ -310,7 +310,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
   describe('pagination', () => {
     // Schema with a large enum to test pagination (>10 items)
     const PAGINATION_SCHEMA = {
-      version: 1,
+      version: 2,
       enums: {
         category: [
           'category-01', 'category-02', 'category-03', 'category-04', 'category-05',
@@ -321,11 +321,11 @@ describePty('NumberedSelectPrompt PTY tests', () => {
       types: {
         item: {
           output_dir: 'Items',
-          frontmatter: {
+          fields: {
             type: { value: 'item' },
             category: { prompt: 'select', enum: 'category', required: true },
           },
-          frontmatter_order: ['type', 'category'],
+          field_order: ['type', 'category'],
         },
       },
     };
@@ -545,17 +545,17 @@ describePty('NumberedSelectPrompt PTY tests', () => {
     it('should handle empty choices gracefully', async () => {
       // Schema with type-based source that returns no results (type doesn't exist)
       const emptySchema = {
-        version: 1,
+        version: 2,
         enums: {},
         types: {
           item: {
             output_dir: 'Items',
-            frontmatter: {
+            fields: {
               type: { value: 'item' },
               // Reference a type that doesn't exist - will return no results
               ref: { prompt: 'dynamic', source: 'nonexistent_type', format: 'wikilink' },
             },
-            frontmatter_order: ['type', 'ref'],
+            field_order: ['type', 'ref'],
           },
         },
       };
@@ -584,7 +584,7 @@ describePty('NumberedSelectPrompt PTY tests', () => {
 
   describe('escape key abort', () => {
     it('should abort on Escape key during selection', async () => {
-      const proc = spawnOvault(['new', 'objective/task'], {
+      const proc = spawnOvault(['new', 'task'], {
         cwd: TEST_VAULT_PATH,
       });
 

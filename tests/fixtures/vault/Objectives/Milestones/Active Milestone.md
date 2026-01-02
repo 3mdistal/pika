@@ -1,6 +1,5 @@
 ---
-type: objective
-objective-type: milestone
+type: milestone
 status: in-flight
 ---
 ## Tasks
