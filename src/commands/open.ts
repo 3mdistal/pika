@@ -1,5 +1,8 @@
 /**
- * Open command - open a note via query resolution.
+ * Open command - alias for `search --open`.
+ * 
+ * This command is kept for backward compatibility and convenience.
+ * It delegates to the search command with the --open flag.
  * 
  * Supports multiple output modes:
  * - obsidian: Open in Obsidian via URI scheme (default, or set PIKA_DEFAULT_APP)
@@ -26,7 +29,7 @@ import { parsePickerMode, resolveAndPick, type PickerMode } from '../lib/picker.
 // Types
 // ============================================================================
 
-type AppMode = 'obsidian' | 'editor' | 'system' | 'print';
+export type AppMode = 'obsidian' | 'editor' | 'system' | 'print';
 
 interface OpenOptions {
   app?: string;
@@ -39,12 +42,14 @@ interface OpenOptions {
 // ============================================================================
 
 export const openCommand = new Command('open')
-  .description('Open a note by name or path query')
+  .description('Open a note by name or path query (alias for: search --open)')
   .argument('[query]', 'Note name, basename, or path to open (omit to browse all)')
   .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
   .option('--picker <mode>', 'Selection mode: auto (default), fzf, numbered, none')
   .option('-o, --output <format>', 'Output format: text (default) or json')
   .addHelpText('after', `
+This command is an alias for: pika search <query> --open
+
 App Modes:
   obsidian    Open in Obsidian via URI scheme (default)
   editor      Open in $VISUAL or $EDITOR
@@ -68,6 +73,10 @@ Examples:
   pika open "My Note" --app editor # Open in $EDITOR
   pika open "My Note" --app print  # Just print path
   pika open "Amb" --picker none --output json  # Scripting mode
+
+Equivalent search commands:
+  pika open "My Note"              # = pika search "My Note" --open
+  pika open "My Note" --app editor # = pika search "My Note" --open --app editor
 
 Note: Obsidian must be running for --app obsidian to work.
       For --app editor, set $VISUAL or $EDITOR environment variable.`)
@@ -161,13 +170,19 @@ Note: Obsidian must be running for --app obsidian to work.
 /**
  * Open a note using the configured app mode (respects PIKA_DEFAULT_APP).
  * This is the shared entry point for opening notes from other commands.
+ * 
+ * @param vaultDir - The vault directory path
+ * @param filePath - Absolute path to the note file
+ * @param appModeOverride - Optional app mode override (uses PIKA_DEFAULT_APP if not provided)
+ * @param jsonMode - Whether to output JSON
  */
 export async function openNote(
   vaultDir: string,
   filePath: string,
+  appModeOverride?: string,
   jsonMode: boolean = false
 ): Promise<void> {
-  const appMode = parseAppMode(undefined); // Uses PIKA_DEFAULT_APP or defaults to obsidian
+  const appMode = parseAppMode(appModeOverride);
 
   switch (appMode) {
     case 'print':
@@ -186,7 +201,7 @@ export async function openNote(
   }
 }
 
-function parseAppMode(value: string | undefined): AppMode {
+export function parseAppMode(value: string | undefined): AppMode {
   // Use explicit value, then env var, then default to obsidian
   const effectiveValue = value ?? process.env['PIKA_DEFAULT_APP'];
   
