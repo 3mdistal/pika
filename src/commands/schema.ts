@@ -11,6 +11,8 @@ import {
   getTypeNames,
   computeDefaultOutputDir,
   resolveSourceType,
+  getFieldsByOrigin,
+  getFieldOrderForOrigin,
 } from '../lib/schema.js';
 import { resolveVaultDir } from '../lib/vault.js';
 import {
@@ -847,14 +849,42 @@ function outputTypeDetailsJson(schema: LoadedSchema, typePath: string): void {
     process.exit(ExitCodes.VALIDATION_ERROR);
   }
 
-  const fields = getFieldsForType(schema, typePath);
+  // Get all fields (merged) for backwards compatibility
+  const allFields = getFieldsForType(schema, typePath);
+
+  // Get fields grouped by origin for inheritance display
+  const { ownFields, inheritedFields } = getFieldsByOrigin(schema, typePath);
+
+  // Format inherited fields as object keyed by origin type
+  const inheritedFieldsObj: Record<string, Record<string, unknown>> = {};
+  for (const [origin, fields] of inheritedFields) {
+    inheritedFieldsObj[origin] = Object.fromEntries(
+      Object.entries(fields).map(([name, field]) => [
+        name,
+        formatFieldForJson(schema, field),
+      ])
+    );
+  }
 
   const output: Record<string, unknown> = {
     type_path: typePath,
+    extends: typeDef.parent,
     output_dir: typeDef.outputDir,
     filename: typeDef.filename,
+    // Own fields defined on this type
+    own_fields: Object.fromEntries(
+      Object.entries(ownFields).map(([name, field]) => [
+        name,
+        formatFieldForJson(schema, field),
+      ])
+    ),
+    // Inherited fields grouped by origin type
+    inherited_fields: Object.keys(inheritedFieldsObj).length > 0
+      ? inheritedFieldsObj
+      : undefined,
+    // All merged fields (backwards compatible)
     fields: Object.fromEntries(
-      Object.entries(fields).map(([name, field]) => [
+      Object.entries(allFields).map(([name, field]) => [
         name,
         formatFieldForJson(schema, field),
       ])
@@ -1034,21 +1064,48 @@ function showTypeDetails(schema: LoadedSchema, typePath: string): void {
     console.log(`  ${chalk.cyan('Extends:')} ${typeDef.parent}`);
   }
 
-  // Frontmatter fields
-  const fields = getFieldsForType(schema, typePath);
-  if (Object.keys(fields).length > 0) {
-    console.log(`\n  ${chalk.cyan('Fields:')}`);
-    for (const [name, field] of Object.entries(fields)) {
-      printFieldDetails(schema, name, field, '    ');
+  // Subtypes (children in new model) - show before fields for better overview
+  if (hasSubtypes(typeDef)) {
+    console.log(`  ${chalk.cyan('Subtypes:')} ${getSubtypeKeys(typeDef).join(', ')}`);
+  }
+
+  // Fields grouped by origin (own vs inherited)
+  const { ownFields, inheritedFields } = getFieldsByOrigin(schema, typePath);
+
+  // Own fields section
+  console.log(`\n  ${chalk.cyan('Own fields:')}`);
+  const ownFieldNames = Object.keys(ownFields);
+  if (ownFieldNames.length === 0) {
+    console.log(chalk.gray('    (none)'));
+  } else {
+    // Use this type's field order for own fields
+    const orderedOwnFields = getFieldOrderForOrigin(schema, typeDef.name, ownFieldNames);
+    for (const name of orderedOwnFields) {
+      printFieldDetails(schema, name, ownFields[name]!, '    ');
     }
   }
 
-  // Subtypes (children in new model)
-  if (hasSubtypes(typeDef)) {
-    console.log(`\n  ${chalk.cyan('Subtypes:')}`);
-    for (const subtype of getSubtypeKeys(typeDef)) {
-      console.log(`    ${chalk.green(subtype)}`);
+  // Inherited fields sections - one per ancestor that contributed fields
+  // Show in ancestor order (parent first, then grandparent, etc.)
+  if (inheritedFields.size > 0) {
+    for (const ancestorName of typeDef.ancestors) {
+      const ancestorFields = inheritedFields.get(ancestorName);
+      if (ancestorFields && Object.keys(ancestorFields).length > 0) {
+        console.log(`\n  ${chalk.cyan(`Inherited fields (from ${ancestorName}):`)}`);
+        // Use ancestor's field order
+        const orderedFields = getFieldOrderForOrigin(
+          schema,
+          ancestorName,
+          Object.keys(ancestorFields)
+        );
+        for (const name of orderedFields) {
+          printFieldDetails(schema, name, ancestorFields[name]!, '    ');
+        }
+      }
     }
+  } else {
+    console.log(`\n  ${chalk.cyan('Inherited fields:')}`);
+    console.log(chalk.gray('    (none)'));
   }
 
   // Body sections
@@ -1079,6 +1136,19 @@ function printFieldDetails(
     const values = getEnumValues(schema, field.enum);
     if (values.length > 0) {
       line += chalk.gray(` (${values.slice(0, 5).join(', ')}${values.length > 5 ? '...' : ''})`);
+    }
+  }
+
+  // Show format for dynamic fields
+  if (field.prompt === 'dynamic' && field.format) {
+    line += chalk.gray(` format=${field.format}`);
+  }
+
+  // Show filter summary for dynamic fields
+  if (field.prompt === 'dynamic' && field.filter) {
+    const filterKeys = Object.keys(field.filter);
+    if (filterKeys.length > 0) {
+      line += chalk.gray(` filter=[${filterKeys.join(',')}]`);
     }
   }
 

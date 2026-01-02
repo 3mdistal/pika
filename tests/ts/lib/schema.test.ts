@@ -19,6 +19,8 @@ import {
   computeDefaultOutputDir,
   getType,
   resolveSourceType,
+  getFieldsByOrigin,
+  getFieldOrderForOrigin,
 } from '../../../src/lib/schema.js';
 import { createTestVault, cleanupTestVault, TEST_SCHEMA } from '../fixtures/setup.js';
 import type { LoadedSchema } from '../../../src/types/schema.js';
@@ -503,6 +505,181 @@ describe('schema', () => {
       if (!result.success) {
         expect(result.error).toContain('is a value in the "priority" enum');
       }
+    });
+  });
+
+  describe('getFieldsByOrigin', () => {
+    it('should separate own fields from inherited fields', async () => {
+      // Create a v2 schema with inheritance
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'pika-origin-test-'));
+      try {
+        await mkdir(join(tempDir, '.pika'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.pika/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              meta: {
+                fields: {
+                  created: { prompt: 'date', required: true }
+                }
+              },
+              task: {
+                extends: 'meta',
+                fields: {
+                  status: { prompt: 'input' }
+                }
+              }
+            }
+          })
+        );
+
+        const v2Schema = await loadSchema(tempDir);
+        const result = getFieldsByOrigin(v2Schema, 'task');
+
+        // Own fields should contain 'status'
+        expect(Object.keys(result.ownFields)).toContain('status');
+        expect(Object.keys(result.ownFields)).not.toContain('created');
+
+        // Inherited fields should contain 'created' from 'meta'
+        expect(result.inheritedFields.has('meta')).toBe(true);
+        const metaFields = result.inheritedFields.get('meta')!;
+        expect(Object.keys(metaFields)).toContain('created');
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should return empty when type has no fields', async () => {
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'pika-empty-test-'));
+      try {
+        await mkdir(join(tempDir, '.pika'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.pika/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              empty: {}
+            }
+          })
+        );
+
+        const v2Schema = await loadSchema(tempDir);
+        const result = getFieldsByOrigin(v2Schema, 'empty');
+
+        expect(Object.keys(result.ownFields)).toHaveLength(0);
+        expect(result.inheritedFields.size).toBe(0);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should handle multi-level inheritance', async () => {
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'pika-multilevel-test-'));
+      try {
+        await mkdir(join(tempDir, '.pika'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.pika/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              meta: {
+                fields: {
+                  created: { prompt: 'date' }
+                }
+              },
+              objective: {
+                extends: 'meta',
+                fields: {
+                  status: { prompt: 'input' }
+                }
+              },
+              task: {
+                extends: 'objective',
+                fields: {
+                  deadline: { prompt: 'input' }
+                }
+              }
+            }
+          })
+        );
+
+        const v2Schema = await loadSchema(tempDir);
+        const result = getFieldsByOrigin(v2Schema, 'task');
+
+        // Own fields: deadline
+        expect(Object.keys(result.ownFields)).toEqual(['deadline']);
+
+        // Inherited from objective: status
+        expect(result.inheritedFields.has('objective')).toBe(true);
+        expect(Object.keys(result.inheritedFields.get('objective')!)).toEqual(['status']);
+
+        // Inherited from meta: created
+        expect(result.inheritedFields.has('meta')).toBe(true);
+        expect(Object.keys(result.inheritedFields.get('meta')!)).toEqual(['created']);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should return empty for unknown type', () => {
+      const result = getFieldsByOrigin(schema, 'nonexistent');
+      expect(Object.keys(result.ownFields)).toHaveLength(0);
+      expect(result.inheritedFields.size).toBe(0);
+    });
+  });
+
+  describe('getFieldOrderForOrigin', () => {
+    it('should return fields in the origin types field order', async () => {
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'pika-order-test-'));
+      try {
+        await mkdir(join(tempDir, '.pika'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.pika/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              meta: {
+                fields: {
+                  alpha: { prompt: 'input' },
+                  beta: { prompt: 'input' },
+                  gamma: { prompt: 'input' }
+                },
+                field_order: ['gamma', 'alpha', 'beta']
+              }
+            }
+          })
+        );
+
+        const v2Schema = await loadSchema(tempDir);
+        const order = getFieldOrderForOrigin(v2Schema, 'meta', ['beta', 'alpha', 'gamma']);
+
+        // Should follow meta's field_order
+        expect(order).toEqual(['gamma', 'alpha', 'beta']);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should return fields as-is for unknown type', () => {
+      const order = getFieldOrderForOrigin(schema, 'nonexistent', ['a', 'b', 'c']);
+      expect(order).toEqual(['a', 'b', 'c']);
     });
   });
 });
