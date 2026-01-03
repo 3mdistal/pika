@@ -6,6 +6,15 @@ All notable changes to Pika are documented in this file.
 
 ### Added
 
+- **Schema management CLI** (pika-tsh)
+  - `pika schema edit-type <name>` - Modify type settings (output directory, extends, filename pattern)
+  - `pika schema remove-type <name>` - Remove a type from schema (dry-run by default, `--execute` to apply)
+  - `pika schema edit-field <type> <field>` - Modify field properties (required, default, label)
+  - `pika schema remove-field <type> <field>` - Remove a field from a type (dry-run by default)
+  - All destructive operations show impact analysis (affected files, child types) before confirmation
+  - Interactive mode for edit-field when no flags provided
+  - Full JSON output support with `--output json`
+
 - **Schema migration system** (pika-3nd)
   - `pika schema diff` - Shows pending changes between current schema and last-applied snapshot
   - `pika schema migrate` - Applies schema changes to existing notes (dry-run by default)

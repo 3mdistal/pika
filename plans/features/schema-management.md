@@ -9,11 +9,18 @@
 The `pika schema` command provides full CLI control over the schema:
 
 - Explore types, fields, and enums
-- Add, edit, and remove types
-- Manage shared fields
+- Add, edit, and remove types (with inheritance via `--extends`)
+- Manage fields on types
 - Handle migrations when schema changes
 
 The goal is to **never require direct JSON editing**.
+
+### Design Principles
+
+- **Inheritance model**: All types extend from `meta` (explicitly or implicitly). A "subtype" is just a type with `--extends <parent>`.
+- **Global enums**: Enums are schema-level resources referenced by fields. Composability comes from choosing which fields to include on which types.
+- **Dry-run by default**: Destructive operations show what would change and prompt for confirmation. Use `--execute` to skip the prompt.
+- **Migration integration**: Schema changes that affect existing files flow through `schema diff` → `schema migrate`.
 
 ---
 
@@ -22,38 +29,28 @@ The goal is to **never require direct JSON editing**.
 ```bash
 # Exploration
 pika schema show                          # Tree view of all types
-pika schema show objective/task           # Show specific type
+pika schema show task                     # Show specific type
 pika schema validate                      # Validate schema structure
 
 # Type management
-pika schema add-type <name>               # Create new type
+pika schema add-type <name>               # Create new type (--extends for inheritance)
 pika schema edit-type <name>              # Modify type settings
-pika schema remove-type <name>            # Remove type
-
-# Subtype management
-pika schema add-subtype <type> <name>     # Add subtype
-pika schema edit-subtype <type/subtype>   # Modify subtype
-pika schema remove-subtype <type/subtype> # Remove subtype
+pika schema remove-type <name>            # Remove type (dry-run + prompt)
 
 # Field management
-pika schema add-field <name> <type>       # Add field to type
-pika schema edit-field <name> <type>      # Modify field
-pika schema remove-field <name> <type>    # Remove field
-
-# Shared fields
-pika schema add-shared-field <name>       # Create shared field
-pika schema edit-shared-field <name>      # Modify shared field
-pika schema remove-shared-field <name>    # Remove shared field
+pika schema add-field <type> [field]      # Add field to type
+pika schema edit-field <type> <field>     # Modify field properties
+pika schema remove-field <type> <field>   # Remove field (dry-run + prompt)
 
 # Enum management
-pika schema add-enum <name>               # Create new enum
-pika schema edit-enum <name> [options]    # Modify enum
-pika schema remove-enum <name>            # Remove enum
-pika schema list-enums                    # List all enums
+pika schema enum list                     # List all enums
+pika schema enum add <name>               # Create new enum
+pika schema enum update <name>            # Modify enum (--add, --remove, --rename)
+pika schema enum delete <name>            # Remove enum
 
 # Migration
 pika schema diff                          # Show pending migrations
-pika schema apply                         # Apply migrations
+pika schema migrate                       # Apply migrations
 pika schema history                       # Show migration history
 ```
 
@@ -68,59 +65,51 @@ pika schema show
 
 # Schema v3
 # 
-# Shared Fields:
-#   status     select(status)      required, default: inbox
-#   scopes     multi-input         default: []
-#   tags       multi-input         default: []
-# 
 # Enums:
 #   status     inbox, backlog, planned, in-progress, done, cancelled
 #   priority   low, medium, high, critical
 # 
 # Types:
-#   objective/                      Objectives/
-#     task                          Objectives/Tasks/       [pooled]
-#       Fields: type, milestone, deadline, priority
-#       Shared: status, scopes
-#     milestone                     Objectives/Milestones/  [pooled]
-#       Fields: type, start-date, end-date
-#       Shared: status
+#   meta                             (base type)
+#     Fields: status, scopes, tags
 #   
-#   idea                            Ideas/                  [pooled]
+#   objective        extends: meta   Objectives/
+#     Fields: type
+#   
+#   task             extends: objective   Objectives/Tasks/   [pooled]
+#     Fields: milestone, deadline, priority
+#     Inherited: status, scopes, tags, type
+#   
+#   milestone        extends: objective   Objectives/Milestones/   [pooled]
+#     Fields: start-date, end-date
+#     Inherited: status, scopes, tags, type
+#   
+#   idea             extends: meta   Ideas/   [pooled]
 #     Fields: type, priority
-#     Shared: status, scopes, tags
-#   
-#   draft/                          Drafts/                 [instance-grouped]
-#     version                       {instance}/             
-#       Fields: type, canonical
-#     research                      {instance}/             
-#       Fields: type
-#     notes                         {instance}/             
-#       Fields: type
+#     Inherited: status, scopes, tags
 ```
 
 ### Show Specific Type
 
 ```bash
-pika schema show objective/task
+pika schema show task
 
-# Type: objective/task
+# Type: task
+# Extends: objective
 # 
 # Directory: Objectives/Tasks/
 # Mode: pooled
 # 
-# Shared Fields:
+# Inherited Fields (from objective, meta):
 #   status     select(status)      required, default: inbox
 #   scopes     multi-input         default: []
-# 
-# Type Fields:
+#   tags       multi-input         default: []
 #   type       value: "task"       (fixed)
+# 
+# Own Fields:
 #   milestone  dynamic(milestones) required
 #   deadline   date                optional
 #   priority   select(priority)    default: medium
-# 
-# Frontmatter Order:
-#   type, status, milestone, deadline, priority, scopes
 # 
 # Files: 47
 ```
@@ -132,14 +121,14 @@ pika schema validate
 
 # Validating schema...
 # 
-# ✓ Schema structure is valid
-# ✓ All enum references exist
-# ✓ All dynamic sources exist
-# ✓ All shared field references exist
+# OK Schema structure is valid
+# OK All enum references exist
+# OK All dynamic sources exist
+# OK Type inheritance is valid
 # 
 # Warnings:
-#   - Type 'draft/resources' has no files in vault
-#   - Enum 'old-status' is not used by any type
+#   - Type 'draft' has no files in vault
+#   - Enum 'old-status' is not used by any field
 ```
 
 ---
@@ -149,23 +138,25 @@ pika schema validate
 ### Add Type
 
 ```bash
+# Non-interactive (requires --output-dir):
+pika schema add-type book --output-dir Books
+pika schema add-type person --extends entity --output-dir Entities/People
+
+# Interactive mode (prompts for options):
 pika schema add-type project
 
 # Creating new type: project
 # 
-# Directory mode:
-#   1. pooled (all files in one folder)
-#   2. instance-grouped (files grouped by instance)
-# > 2
+# Extends (default: meta): entity
 # 
 # Output directory: Projects
 # 
-# Include shared fields?
-#   [x] status
-#   [x] scopes
-#   [ ] tags
+# Directory mode:
+#   1. pooled (all files in one folder)
+#   2. instance-grouped (files grouped by instance)
+# > 1
 # 
-# Add type-specific fields now? [Y/n] y
+# Add fields now? [Y/n] y
 # 
 # Field name (or 'done'): deadline
 # Prompt type:
@@ -178,25 +169,14 @@ pika schema add-type project
 #   7. fixed value
 # > 3
 # Required? [y/N] n
-# Default value (blank for none): 
 # 
 # Field name (or 'done'): done
 # 
-# Add subtypes now? [Y/n] y
-# 
-# Subtype name (or 'done'): plan
-# Filename pattern: Plan.md
-# 
-# Subtype name (or 'done'): log
-# Filename pattern: Log.md
-# 
-# Subtype name (or 'done'): done
-# 
-# ✓ Created type 'project' with 2 subtypes
-#   Directory: Projects/{instance}/
-#   Shared fields: status, scopes
-#   Type fields: deadline
-#   Subtypes: plan, log
+# OK Created type 'project'
+#   Extends: entity
+#   Directory: Projects/
+#   Fields: deadline
+#   Inherited: status, scopes, tags (from entity, meta)
 ```
 
 ### Edit Type
@@ -208,19 +188,17 @@ pika schema edit-type project
 # 
 # What would you like to change?
 #   1. Output directory (current: Projects)
-#   2. Directory mode (current: instance-grouped)
-#   3. Shared fields
-#   4. Frontmatter order
-# > 3
+#   2. Directory mode (current: pooled)
+#   3. Parent type (current: entity)
+#   4. Filename pattern
+# > 1
 # 
-# Current shared fields: status, scopes
+# Output directory: Projects/Active
 # 
-# Shared fields to include:
-#   [x] status
-#   [x] scopes
-#   [x] tags        ← added
+# OK Updated output directory for 'project'
+#   Projects → Projects/Active
 # 
-# ✓ Updated shared fields for 'project'
+# Note: Existing files not moved. Run 'pika bulk project --move' to relocate.
 ```
 
 ### Remove Type
@@ -228,20 +206,22 @@ pika schema edit-type project
 ```bash
 pika schema remove-type project
 
-# ⚠ Warning: Removing type 'project'
+# Removing type: project
 # 
 # This will:
 #   - Remove type definition from schema
-#   - Remove 2 subtypes (plan, log)
 #   - NOT delete existing files (12 files in Projects/)
 # 
 # Existing files will become orphans (no type definition).
 # 
-# Are you sure? [y/N] y
+# Apply? [y/N] y
 # 
-# ✓ Removed type 'project'
+# OK Removed type 'project'
 # 
 # Tip: Run 'pika audit' to find orphaned files.
+
+# Non-interactive:
+pika schema remove-type project --execute
 ```
 
 ---
@@ -251,36 +231,30 @@ pika schema remove-type project
 ### Add Field
 
 ```bash
-pika schema add-field deadline task
+# Interactive:
+pika schema add-field task
 
-# Adding field 'deadline' to objective/task
+# Adding field to task
 # 
-# Prompt type:
-#   1. input (text)
-#   2. select (enum)
-#   3. date
-#   4. number
-#   5. multi-input (list)
-#   6. dynamic (from other notes)
-#   7. fixed value
-# > 3
-# 
+# Field name: deadline
+# Prompt type: date
 # Required? [y/N] n
 # Default value (blank for none): 
 # Label (blank for field name): Due Date
 # 
-# ✓ Added field 'deadline' to objective/task
-# 
-# 47 existing tasks don't have this field.
-# Add to existing files? [y/N] n
+# OK Added field 'deadline' to task
+
+# Non-interactive with flags:
+pika schema add-field task deadline --prompt date --label "Due Date"
+pika schema add-field task priority --prompt select --enum priority --default medium
 ```
 
 ### Edit Field
 
 ```bash
-pika schema edit-field priority task
+pika schema edit-field task priority
 
-# Editing field 'priority' in objective/task
+# Editing field 'priority' in task
 # 
 # Current configuration:
 #   Prompt: select
@@ -295,199 +269,130 @@ pika schema edit-field priority task
 #   4. Label
 # > 3
 # 
-# New default value: high
+# New default value:
+#   1. low
+#   2. medium
+#   3. high
+#   4. critical
+# > 3
 # 
-# ✓ Updated field 'priority' in objective/task
+# OK Updated field 'priority' in task
 #   default: medium → high
 # 
-# This only affects new tasks. Existing tasks unchanged.
+# This only affects new notes. Existing notes unchanged.
 ```
 
 ### Remove Field
 
 ```bash
-pika schema remove-field legacy-notes task
+pika schema remove-field task legacy-notes
 
-# ⚠ Warning: Removing field 'legacy-notes' from objective/task
+# Removing field 'legacy-notes' from task
 # 
-# 23 tasks currently have this field.
+# 23 notes currently have this field.
 # 
-# Options:
-#   1. Remove from schema only (field stays in files)
-#   2. Remove from schema and delete from all files
-# > 1
+# This will:
+#   - Remove field from schema
+#   - NOT delete field from existing files
 # 
-# ✓ Removed field 'legacy-notes' from schema
+# Apply? [y/N] y
+# 
+# OK Removed field 'legacy-notes' from schema
 # 
 # Note: 23 files still have 'legacy-notes' field.
 # Run 'pika bulk task --delete legacy-notes --execute' to remove from files.
-```
 
----
-
-## Shared Fields
-
-### Add Shared Field
-
-```bash
-pika schema add-shared-field priority
-
-# Creating shared field: priority
-# 
-# Prompt type:
-#   1. input (text)
-#   2. select (enum)
-#   3. date
-#   4. number
-#   5. multi-input (list)
-# > 2
-# 
-# Enum name: priority
-# Enum exists: low, medium, high, critical
-# 
-# Required? [y/N] n
-# Default value: medium
-# 
-# ✓ Created shared field 'priority'
-# 
-# Add to types now? [Y/n] y
-# 
-# Select types to add 'priority' to:
-#   [x] idea
-#   [x] objective/task
-#   [ ] objective/milestone
-#   [ ] draft
-# 
-# ✓ Added 'priority' to 2 types
-```
-
-### Edit Shared Field
-
-```bash
-pika schema edit-shared-field status
-
-# Editing shared field: status
-# 
-# Current configuration:
-#   Prompt: select
-#   Enum: status
-#   Required: yes
-#   Default: inbox
-# 
-# What would you like to change?
-#   1. Default value
-#   2. Required status
-#   3. Label
-# > 1
-# 
-# New default value:
-#   1. inbox
-#   2. backlog
-#   3. planned
-#   4. in-progress
-#   5. done
-#   6. cancelled
-# > 2
-# 
-# ✓ Updated shared field 'status'
-#   default: inbox → backlog
-# 
-# Types using this field: idea, objective/task, objective/milestone, draft
-# New tasks/ideas/etc. will default to 'backlog'.
+# Non-interactive:
+pika schema remove-field task legacy-notes --execute
 ```
 
 ---
 
 ## Enum Management
 
+### List Enums
+
+```bash
+pika schema enum list
+
+# Enums:
+#   status      inbox, backlog, planned, in-progress, done, cancelled
+#               Used by: meta.status
+#   
+#   priority    low, medium, high, critical
+#               Used by: task.priority, idea.priority
+#   
+#   scope       day, week, sprint, quarter, year
+#               Used by: task.scope
+```
+
 ### Add Enum
 
 ```bash
-pika schema add-enum scope
+pika schema enum add scope
 
 # Creating enum: scope
 # 
 # Values (comma-separated): day, week, sprint, quarter, year
 # 
-# ✓ Created enum 'scope' with 5 values
+# OK Created enum 'scope' with 5 values
 ```
 
-### Edit Enum
+### Update Enum
 
 ```bash
 # Add value
-pika schema edit-enum status --add archived
+pika schema enum update status --add archived
 
 # Adding 'archived' to enum 'status'
 # Current: inbox, backlog, planned, in-progress, done, cancelled
 # New:     inbox, backlog, planned, in-progress, done, cancelled, archived
 # 
-# ✓ Added 'archived' to enum 'status'
+# OK Added 'archived' to enum 'status'
 
 # Rename value
-pika schema edit-enum status --rename in-flight=in-progress
+pika schema enum update status --rename in-flight=in-progress
 
 # Renaming in enum 'status': in-flight → in-progress
 # 
-# 23 files use 'in-flight'. Update them? [Y/n] y
+# 23 files use 'in-flight'.
+# This change will be tracked as a pending migration.
 # 
-# Updating files...
-#   ✓ Updated 23 files
-# 
-# ✓ Renamed 'in-flight' to 'in-progress'
+# OK Renamed 'in-flight' to 'in-progress'
+# Run 'pika schema migrate' to update affected files.
 
 # Remove value
-pika schema edit-enum status --remove deprecated
+pika schema enum update status --remove deprecated
 
 # Removing 'deprecated' from enum 'status'
 # 
-# 5 files use 'deprecated'. Choose action:
-#   1. Replace with another value
-#   2. Remove from schema only (files become invalid)
-#   3. Cancel
-# > 1
+# 5 files use 'deprecated'.
+# This change will be tracked as a pending migration.
 # 
-# Replace with:
-#   1. inbox
-#   2. backlog
-#   3. planned
-#   4. in-progress
-#   5. done
-#   6. cancelled
-# > 6
-# 
-# Updating files...
-#   ✓ Updated 5 files
-# 
-# ✓ Removed 'deprecated' from enum 'status'
-
-# Reorder values
-pika schema edit-enum priority --reorder
-
-# Current order: low, medium, high, critical
-# 
-# New order (comma-separated): critical, high, medium, low
-# 
-# ✓ Reordered enum 'priority'
+# OK Removed 'deprecated' from enum 'status'
+# Run 'pika schema migrate' to update affected files.
 ```
 
-### List Enums
+### Delete Enum
 
 ```bash
-pika schema list-enums
+pika schema enum delete old-status
 
-# Enums:
-#   status      inbox, backlog, planned, in-progress, done, cancelled
-#               Used by: status (shared)
-#   
-#   priority    low, medium, high, critical
-#               Used by: priority (shared), idea.priority
-#   
-#   scope       day, week, sprint, quarter, year
-#               Used by: objective/task.scope
-#   
-#   draft-status  idea, outlining, drafting, revising, editing, complete
-#               Used by: draft.status (override)
+# Deleting enum: old-status
+# 
+# This enum is not used by any fields.
+# 
+# Apply? [y/N] y
+# 
+# OK Deleted enum 'old-status'
+
+# If enum is in use:
+pika schema enum delete status
+
+# X Cannot delete enum 'status'
+#   It is used by field 'meta.status'
+# 
+# Remove the field first, then delete the enum.
 ```
 
 ---
@@ -498,7 +403,7 @@ pika schema list-enums
 
 1. Schema changes that affect existing files create **pending migrations**
 2. `pika schema diff` shows what migrations are pending
-3. `pika schema apply` executes migrations
+3. `pika schema migrate` executes migrations (dry-run + prompt by default)
 4. Migrations are logged in `.pika/migrations/`
 
 ### Schema Diff
@@ -512,7 +417,7 @@ pika schema diff
 #    Affects: 23 files
 #    Auto-applicable: yes
 # 
-# 2. New required field: objective/task.scope
+# 2. New required field: task.scope
 #    Affects: 47 files (missing field)
 #    Auto-applicable: yes (has default: week)
 # 
@@ -520,23 +425,21 @@ pika schema diff
 #    Affects: 12 files
 #    Auto-applicable: no (needs replacement value)
 # 
-# Run 'pika schema apply' to execute migrations.
+# Run 'pika schema migrate' to apply.
 ```
 
-### Schema Apply
+### Schema Migrate
 
 ```bash
-pika schema apply
+pika schema migrate
 
 # Applying migrations...
 # 
 # 1. Enum rename: status.in-flight → status.in-progress
-#    Updating 23 files...
-#    ✓ Done
+#    23 files would be updated
 # 
-# 2. New required field: objective/task.scope
-#    Adding 'scope: week' to 47 files...
-#    ✓ Done
+# 2. New required field: task.scope
+#    47 files would get 'scope: week'
 # 
 # 3. Removed enum value: priority.low
 #    12 files have 'priority: low'. Replace with:
@@ -544,11 +447,18 @@ pika schema apply
 #      2. high
 #      3. critical
 #    > 1
-#    Updating 12 files...
-#    ✓ Done
 # 
-# ✓ Applied 3 migrations
-# ✓ Updated 82 files
+# Apply these changes? [y/N] y
+# 
+# Applying...
+#   OK Updated 23 files (enum rename)
+#   OK Updated 47 files (new field)
+#   OK Updated 12 files (enum removal)
+# 
+# OK Applied 3 migrations, updated 82 files
+
+# Non-interactive:
+pika schema migrate --execute
 ```
 
 ### Auto-Apply vs Prompt
@@ -563,44 +473,7 @@ pika schema apply
 - Remove field (delete data?)
 - Change field type (how to convert?)
 
----
-
-## Schema Versioning
-
-The schema tracks version and migration history:
-
-```json
-{
-  "version": 5,
-  "migrations": [
-    {
-      "version": 2,
-      "timestamp": "2025-01-10T10:00:00Z",
-      "description": "Added shared fields"
-    },
-    {
-      "version": 3,
-      "timestamp": "2025-01-12T14:30:00Z",
-      "description": "Renamed status enum values"
-    },
-    {
-      "version": 4,
-      "timestamp": "2025-01-14T09:00:00Z",
-      "description": "Added scope field to tasks"
-    },
-    {
-      "version": 5,
-      "timestamp": "2025-01-15T11:00:00Z",
-      "description": "Added project type"
-    }
-  ],
-  "shared_fields": { ... },
-  "enums": { ... },
-  "types": { ... }
-}
-```
-
-### View History
+### Migration History
 
 ```bash
 pika schema history
@@ -616,15 +489,39 @@ pika schema history
 # v3 (2025-01-12 14:30)
 #   Renamed status enum values
 #     in-flight → in-progress
-#     raw → inbox
 # 
 # v2 (2025-01-10 10:00)
-#   Added shared fields
-#     status, scopes, tags
+#   Added objective type
 # 
 # v1 (2025-01-01 00:00)
 #   Initial schema
 ```
+
+---
+
+## Deprecated Concepts
+
+### Shared Fields (deprecated)
+
+**Status:** Deprecated in favor of inheritance.
+
+Previously, shared fields were defined at the schema level and referenced by types. With the inheritance model, this is redundant:
+
+- **Old way:** Define `status` as a shared field, reference it in multiple types
+- **New way:** Define `status` on `meta`, all types inherit it automatically
+
+See issue `pika-iqng` for deprecation plan.
+
+### Subtypes (deprecated)
+
+**Status:** Replaced by flat types with `extends`.
+
+Previously, subtypes were nested within parent types. Now all types are flat with explicit inheritance:
+
+- **Old way:** `objective/task` as a nested subtype structure
+- **New way:** `task` type with `extends: objective`
+
+The `add-type --extends` flag handles this cleanly.
 
 ---
 
@@ -633,101 +530,66 @@ pika schema history
 ### Invalid Operation
 
 ```bash
-pika schema remove-enum status
+pika schema enum delete status
 
-# ✗ Cannot remove enum 'status'
-#   It is used by shared field 'status'
+# X Cannot delete enum 'status'
+#   It is used by field 'meta.status'
 # 
-# To remove this enum:
-#   1. Remove or modify the shared field first
-#   2. Then remove the enum
+# Remove the field first, then delete the enum.
 ```
 
-### Circular Reference
+### Circular Inheritance
 
 ```bash
-pika schema add-field parent task --type dynamic --source tasks
+pika schema edit-type meta --extends task
 
-# ⚠ Warning: This creates a self-referential field
-#   'task.parent' references 'tasks' (which are tasks)
+# X Cannot set parent type
+#   This would create circular inheritance: meta → task → objective → meta
+```
+
+### Type Not Found
+
+```bash
+pika schema edit-type nonexistent
+
+# X Type 'nonexistent' not found
 # 
-# This is valid but may cause infinite loops in some operations.
-# Continue? [y/N]
+# Available types: meta, objective, task, milestone, idea
 ```
 
 ---
 
-## Implementation Notes
+## Implementation Status
 
-### Schema Loading
+### Implemented
 
-```typescript
-interface Schema {
-  version: number;
-  migrations: Migration[];
-  shared_fields: Record<string, Field>;
-  enums: Record<string, string[]>;
-  types: Record<string, Type>;
-  audit?: AuditConfig;
-}
+- [x] `schema show [type]` - Tree view and type details
+- [x] `schema validate` - Schema validation
+- [x] `schema add-type <name>` - Create new type (with `--extends`)
+- [x] `schema add-field <type> [field]` - Add field to type
+- [x] `schema enum list` - List all enums
+- [x] `schema enum add <name>` - Create enum
+- [x] `schema enum update <name>` - Modify enum
+- [x] `schema enum delete <name>` - Remove enum
+- [x] `schema diff` - Show pending migrations
+- [x] `schema migrate` - Apply migrations
+- [x] `schema history` - Migration history
 
-async function loadSchema(vaultPath: string): Promise<Schema> {
-  const schemaPath = path.join(vaultPath, '.pika', 'schema.json');
-  const content = await fs.readFile(schemaPath, 'utf-8');
-  const raw = JSON.parse(content);
-  
-  // Validate with Zod
-  return SchemaSchema.parse(raw);
-}
+### To Implement (pika-tsh)
 
-async function saveSchema(vaultPath: string, schema: Schema): Promise<void> {
-  // Increment version
-  schema.version += 1;
-  
-  // Add migration record
-  schema.migrations.push({
-    version: schema.version,
-    timestamp: new Date().toISOString(),
-    description: currentMigrationDescription,
-  });
-  
-  const schemaPath = path.join(vaultPath, '.pika', 'schema.json');
-  await fs.writeFile(schemaPath, JSON.stringify(schema, null, 2));
-}
-```
-
-### Interactive Prompts
-
-```typescript
-import prompts from 'prompts';
-
-async function promptForFieldType(): Promise<FieldPromptType> {
-  const { type } = await prompts({
-    type: 'select',
-    name: 'type',
-    message: 'Prompt type:',
-    choices: [
-      { title: 'input (text)', value: 'input' },
-      { title: 'select (enum)', value: 'select' },
-      { title: 'date', value: 'date' },
-      { title: 'number', value: 'number' },
-      { title: 'multi-input (list)', value: 'multi-input' },
-      { title: 'dynamic (from other notes)', value: 'dynamic' },
-      { title: 'fixed value', value: 'value' },
-    ],
-  });
-  
-  return type;
-}
-```
+- [ ] `schema edit-type <name>` - Modify type settings
+- [ ] `schema remove-type <name>` - Remove type (dry-run + prompt)
+- [ ] `schema edit-field <type> <field>` - Modify field properties
+- [ ] `schema remove-field <type> <field>` - Remove field (dry-run + prompt)
 
 ---
 
 ## Success Criteria
 
 1. **No JSON editing** — All operations via CLI
-2. **Interactive** — Guided prompts for complex operations
-3. **Safe migrations** — Clear diff, confirmation, logging
-4. **Reversible** — Migration history, schema versioning
-5. **Validation** — Prevent invalid states
-6. **Discoverability** — `schema show` makes structure clear
+2. **Interactive by default** — Guided prompts for complex operations
+3. **Dry-run for destructive ops** — Show changes, prompt for confirmation
+4. **Migration integration** — Changes flow through diff → migrate
+5. **Inheritance-aware** — Commands understand and display inheritance
+6. **Validation** — Prevent invalid states (circular inheritance, missing refs)
+7. **Discoverability** — `schema show` makes structure clear
