@@ -235,16 +235,16 @@ Backslash: \\ and \\n
   });
 
   describe('error handling', () => {
-    it('should error on file not found', async () => {
+it('should error on file not found', async () => {
       const result = await runCLI(
-        ['edit', 'Ideas/Nonexistent.md', '--json', '{"status": "raw"}'],
+        ['edit', 'CompletelyUniqueNonexistentFile12345.md', '--json', '{"status": "raw"}'],
         vaultDir
       );
 
-      expect(result.exitCode).toBe(2);
+      expect(result.exitCode).toBe(1);
       const json = JSON.parse(result.stdout);
       expect(json.success).toBe(false);
-      expect(json.error).toContain('not found');
+      expect(json.error).toMatch(/no match/i);
     });
 
     it('should error on invalid JSON input', async () => {
@@ -508,5 +508,96 @@ describe('edit command --open flag', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('Open the note');
+  });
+
+  describe('flexible targeting', () => {
+    it('should show --picker option in help', async () => {
+      const result = await runCLI(['edit', '--help'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('--picker');
+    });
+
+    it('should show --type option in help', async () => {
+      const result = await runCLI(['edit', '--help'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('--type');
+    });
+
+    it('should error in JSON mode without query', async () => {
+      // --json requires a frontmatter value, so we pass an empty object
+      // but omit the query - this should error since picker can't run in JSON mode
+      const result = await runCLI(['edit', '--json', '{}'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+      expect(json.error).toMatch(/query required/i);
+    });
+
+    it('should resolve note by partial name match', async () => {
+      // "Sample Idea" should resolve to Ideas/Sample Idea.md
+      const result = await runCLI(
+        ['edit', 'Sample Idea', '--json', '{}'],
+        vaultDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(true);
+      expect(json.path).toContain('Sample Idea.md');
+    });
+
+    it('should resolve note by basename without extension', async () => {
+      const result = await runCLI(
+        ['edit', 'Another Idea', '--json', '{}'],
+        vaultDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(true);
+      expect(json.path).toContain('Another Idea.md');
+    });
+
+    it('should error with unknown type filter', async () => {
+      const result = await runCLI(
+        ['edit', '--type', 'nonexistent-type', '--json', '{}'],
+        vaultDir
+      );
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+      expect(json.error).toMatch(/unknown type/i);
+    });
+
+    it('should filter notes by type', async () => {
+      // With --type idea, should find ideas but not tasks
+      // Use exact name to avoid ambiguity with picker disabled
+      const result = await runCLI(
+        ['edit', 'Sample Idea', '--type', 'idea', '--picker', 'none', '--json', '{}'],
+        vaultDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(true);
+      expect(json.path).toContain('Ideas');
+    });
+
+    it('should error with --picker none and no exact match', async () => {
+      // Ambiguous query with picker disabled should error
+      const result = await runCLI(
+        ['edit', 'Idea', '--picker', 'none', '--json', '{}'],
+        vaultDir
+      );
+
+      // Should fail because "Idea" matches multiple files and picker is disabled
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+    });
   });
 });

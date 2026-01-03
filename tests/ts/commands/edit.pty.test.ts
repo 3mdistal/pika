@@ -390,8 +390,8 @@ status: raw
       await withTempVault(
         ['edit', 'Ideas/NonExistent.md'],
         async (proc) => {
-          // Should show file not found error
-          await proc.waitFor('not found', 5000);
+          // Should show no matching notes found error
+          await proc.waitFor('No matching notes found', 5000);
 
           // Wait for exit
           await proc.waitForExit(5000);
@@ -431,5 +431,40 @@ Content.
         { files: [unknownTypeFile], schema: EDIT_SCHEMA }
       );
     }, 30000);
+  });
+
+  describe('flexible targeting with picker', () => {
+    it('should resolve partial name and edit directly', async () => {
+      const existingFile: TempVaultFile = {
+        path: 'Ideas/Unique Name.md',
+        content: `---
+type: idea
+status: raw
+priority: low
+description: Original description
+---
+
+Content here.
+`,
+      };
+
+      await withTempVault(
+        ['edit', 'Unique Name'],
+        async (proc) => {
+          // Should resolve directly and show editing header
+          await proc.waitFor('Editing:', 5000);
+          // Should show status field (first editable field)
+          await proc.waitFor('status', 5000);
+
+          // Cancel the edit
+          await proc.write(Keys.CTRL_C);
+          await proc.waitForExit(5000);
+        },
+        { files: [existingFile], schema: EDIT_SCHEMA }
+      );
+    }, 30000);
+
+    // Note: Ambiguous query picker behavior is tested in edit.test.ts unit tests
+    // PTY tests for picker are flaky due to timing issues with note index building
   });
 });

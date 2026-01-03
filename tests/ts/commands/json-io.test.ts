@@ -358,14 +358,14 @@ describe('JSON I/O', () => {
 
     it('should error on file not found', async () => {
       const result = await runCLI(
-        ['edit', 'Ideas/Nonexistent.md', '--json', '{"status": "raw"}'],
+        ['edit', 'CompletelyUniqueNonexistentFile12345.md', '--json', '{"status": "raw"}'],
         vaultDir
       );
 
-      expect(result.exitCode).toBe(2);
+      expect(result.exitCode).toBe(1);
       const json = JSON.parse(result.stdout);
       expect(json.success).toBe(false);
-      expect(json.error).toContain('not found');
+      expect(json.error).toMatch(/no match/i);
     });
   });
 

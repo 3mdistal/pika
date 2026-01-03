@@ -130,16 +130,19 @@ Use the explicit flag to clarify.
 
 All commands that operate on note sets support the same selectors:
 
-| Command | `--type` | `--path` | `--where` | `--text` |
-|---------|----------|----------|-----------|----------|
-| list    | Y | Y | Y | Y |
-| bulk    | Y | Y | Y | Y |
-| audit   | Y | Y | Y | Y |
-| search  | Y | Y | Y | Y (primary) |
-| open    | Y | Y | Y | Y |
-| delete  | Y | Y | Y | Y |
+| Command | `--type` | `--path` | `--where` | `--text` | Picker |
+|---------|----------|----------|-----------|----------|--------|
+| list    | Y | Y | Y | Y | - |
+| bulk    | Y | Y | Y | Y | - |
+| audit   | Y | Y | Y | Y | - |
+| search  | Y | Y | Y | Y (primary) | Y |
+| open    | Y | Y | Y | Y | Y |
+| edit    | Y | - | - | - | Y |
+| delete  | Y | Y | Y | Y | - |
 
-**Note:** `open` is an alias for `search --open`.
+**Notes:**
+- `open` is an alias for `search --open`.
+- `edit` supports `--type` for filtering and `--picker` for picker mode selection.
 
 ---
 
@@ -156,7 +159,7 @@ pika list           # Lists all notes
 pika audit          # Audits all notes
 ```
 
-### Interactive commands (`open`)
+### Interactive commands (`open`, `edit`)
 
 No selectors = prompt with picker.
 

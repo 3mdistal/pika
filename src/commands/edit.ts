@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { join, isAbsolute, relative } from 'path';
+import { relative, isAbsolute } from 'path';
 import {
   loadSchema,
   getTypeDefByPath,
@@ -9,7 +9,7 @@ import {
   getEnumValues,
 } from '../lib/schema.js';
 import { parseNote, writeNote, generateBodySections } from '../lib/frontmatter.js';
-import { resolveVaultDir, queryByType, formatValue, isFile } from '../lib/vault.js';
+import { resolveVaultDir, queryByType, formatValue } from '../lib/vault.js';
 import {
   promptSelection,
   promptInput,
@@ -27,34 +27,45 @@ import {
   jsonSuccess,
   jsonError,
   ExitCodes,
+  exitWithResolutionError,
 } from '../lib/output.js';
 import type { LoadedSchema, Field, BodySection } from '../types/schema.js';
 import { UserCancelledError } from '../lib/errors.js';
+import { buildNoteIndex } from '../lib/navigation.js';
+import { resolveAndPick, parsePickerMode, type PickerMode } from '../lib/picker.js';
 
 interface EditCommandOptions {
   open?: boolean;
   json?: string;
+  picker?: string;
+  type?: string;
 }
 
 export const editCommand = new Command('edit')
   .description('Edit an existing note\'s frontmatter interactively')
-  .argument('<file>', 'Path to the file to edit (relative or absolute)')
+  .argument('[query]', 'Note name, path, or search query (opens picker if omitted)')
   .option('--open', 'Open the note in Obsidian after editing')
   .option('--json <frontmatter>', 'Update note non-interactively with JSON (patch/merge semantics)')
+  .option('--picker <mode>', 'Picker mode: auto, fzf, numbered, none', 'auto')
+  .option('--type <type>', 'Restrict to notes of a specific type')
   .addHelpText('after', `
 Examples:
-  pika edit Ideas/My\\ Idea.md
-  pika edit "Objectives/Tasks/My Task.md" --open
+  pika edit                           # Pick from all notes
+  pika edit "My Idea"                 # Search by name
+  pika edit Ideas/My\\ Idea.md        # Exact path
+  pika edit --type task               # Pick from tasks only
+  pika edit "bug" --type task         # Search tasks for "bug"
+  pika edit "My Task" --open          # Edit and open in Obsidian
 
 Non-interactive (JSON) mode:
-  pika edit "Tasks/Fix bug.md" --json '{"status": "done"}'
+  pika edit "Fix bug" --json '{"status": "done"}'
   pika edit Ideas/Idea.md --json '{"priority": "high", "tags": ["urgent"]}'
   
 JSON mode uses patch/merge semantics:
   - Only fields present in JSON are updated
   - Existing fields not in JSON are preserved
   - To clear a field, pass null: '{"deadline": null}'`)
-  .action(async (filePath: string, options: EditCommandOptions, cmd: Command) => {
+  .action(async (query: string | undefined, options: EditCommandOptions, cmd: Command) => {
     const jsonMode = options.json !== undefined;
 
     try {
@@ -62,24 +73,65 @@ JSON mode uses patch/merge semantics:
       const vaultDir = resolveVaultDir(parentOpts ?? {});
       const schema = await loadSchema(vaultDir);
 
-      // Resolve file path
-      const resolvedPath = isAbsolute(filePath) ? filePath : join(vaultDir, filePath);
-
-      if (!(await isFile(resolvedPath))) {
-        const error = `File not found: ${resolvedPath}`;
-        if (jsonMode) {
-          printJson(jsonError(error, { code: ExitCodes.IO_ERROR }));
-          process.exit(ExitCodes.IO_ERROR);
+      // Validate --type if provided
+      if (options.type) {
+        const typeDef = getTypeDefByPath(schema, options.type);
+        if (!typeDef) {
+          const error = `Unknown type: ${options.type}`;
+          if (jsonMode) {
+            printJson(jsonError(error, { code: ExitCodes.VALIDATION_ERROR }));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          printError(error);
+          process.exit(1);
         }
-        printError(error);
-        process.exit(1);
       }
 
+      // Determine effective picker mode (JSON mode disables picker)
+      const pickerMode = parsePickerMode(options.picker);
+      const effectivePickerMode: PickerMode = jsonMode ? 'none' : pickerMode;
+
+      // In JSON mode without a query, we can't show a picker
+      if (jsonMode && !query) {
+        printJson(jsonError('Query required in JSON mode. Use a note name, path, or search term.', { code: ExitCodes.VALIDATION_ERROR }));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+
+      // Convert absolute paths to vault-relative paths for resolution
+      let resolveQuery = query ?? '';
+      if (query && isAbsolute(query) && query.startsWith(vaultDir)) {
+        resolveQuery = relative(vaultDir, query);
+      }
+
+      // Build note index and optionally filter by type
+      let noteIndex = await buildNoteIndex(schema, vaultDir);
+      if (options.type) {
+        noteIndex = {
+          ...noteIndex,
+          allFiles: noteIndex.allFiles.filter(f => f.expectedType?.startsWith(options.type!)),
+        };
+      }
+
+      // Resolve query to a file using picker if needed
+      const result = await resolveAndPick(noteIndex, resolveQuery, {
+        pickerMode: effectivePickerMode,
+        prompt: 'Select note to edit',
+      });
+
+      if (!result.ok) {
+        if (result.cancelled) {
+          process.exit(0);
+        }
+        exitWithResolutionError(result.error, result.candidates, jsonMode);
+      }
+
+      const resolvedPath = result.file.path;
+
       if (jsonMode) {
-        const result = await editNoteFromJson(schema, vaultDir, resolvedPath, options.json!);
+        const editResult = await editNoteFromJson(schema, vaultDir, resolvedPath, options.json!);
         printJson(jsonSuccess({
           path: relative(vaultDir, resolvedPath),
-          updated: result.updatedFields,
+          updated: editResult.updatedFields,
         }));
 
         // Open in Obsidian if requested
