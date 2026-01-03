@@ -55,12 +55,9 @@ jobs:
       - name: Run tests (excluding PTY)
         run: pnpm test -- --exclude='**/*.pty.test.ts'
 
-  # PTY tests only run on main (post-merge verification)
-  # This speeds up PR feedback while still catching PTY regressions
   test-pty:
     name: PTY Tests
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
     # PTY tests may fail in CI due to terminal emulation issues
     # We track these separately and allow failures while debugging
     continue-on-error: true
