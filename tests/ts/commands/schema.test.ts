@@ -1206,7 +1206,7 @@ describe('schema command', () => {
 
       try {
         const result = await runCLI(
-          ['schema', 'new', 'type', 'note', '--extends', 'meta', '--output', 'json'],
+          ['schema', 'new', 'type', 'note', '--inherits', 'meta', '--output', 'json'],
           tempVaultDir
         );
 
@@ -1232,7 +1232,7 @@ describe('schema command', () => {
 
       try {
         const result = await runCLI(
-          ['schema', 'add-type', 'note', '--extends', 'meta'],
+          ['schema', 'add-type', 'note', '--extends', 'meta', '--output', 'json'],
           tempVaultDir
         );
 
