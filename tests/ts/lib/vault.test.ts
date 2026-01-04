@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { join } from 'path';
-import { writeFile, mkdir } from 'fs/promises';
+import { writeFile, mkdir, rm } from 'fs/promises';
 import {
   resolveVaultDir,
   listFilesInDir,
@@ -173,6 +173,40 @@ describe('vault', () => {
     it('should sort results alphabetically', async () => {
       const results = await queryByType(schema, vaultDir, 'idea');
       expect(results).toEqual(['Another Idea', 'Sample Idea']);
+    });
+
+    it('should exclude owned notes (notes in owner folders)', async () => {
+      // Owned notes live in their owner's folder (e.g., Ideas/Sample Idea/tasks/)
+      // rather than the type's output_dir (e.g., Objectives/Tasks/).
+      // This is by design - owned notes cannot be referenced by other notes.
+      
+      // Create an "owned" task note inside an idea's folder
+      const ownerFolder = join(vaultDir, 'Ideas', 'Sample Idea');
+      const ownedTasksFolder = join(ownerFolder, 'tasks');
+      await mkdir(ownedTasksFolder, { recursive: true });
+      
+      const ownedTaskPath = join(ownedTasksFolder, 'Owned Task.md');
+      await writeFile(ownedTaskPath, `---
+type: task
+status: active
+---
+
+This task is owned by Sample Idea and should NOT appear in queryByType results.
+`);
+
+      try {
+        // Query for tasks - should NOT include the owned task
+        const results = await queryByType(schema, vaultDir, 'task');
+        
+        // Should include the regular task in Objectives/Tasks/
+        expect(results).toContain('Sample Task');
+        
+        // Should NOT include the owned task (it's in Ideas/Sample Idea/tasks/, not Objectives/Tasks/)
+        expect(results).not.toContain('Owned Task');
+      } finally {
+        // Cleanup
+        await rm(ownedTasksFolder, { recursive: true, force: true });
+      }
     });
   });
 

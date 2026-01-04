@@ -129,8 +129,12 @@ function matchesAllConditions(
  * named sources with directories and filters, you now specify a type name
  * directly as the `source` on a field, with optional `filter` conditions.
  * 
- * Owned notes (notes that live with their owner) are EXCLUDED from results
- * because owned notes cannot be referenced by other notes' frontmatter.
+ * **Ownership Exclusion**: Owned notes are automatically excluded from results.
+ * This is by design - owned notes live in their owner's folder (e.g., 
+ * `drafts/My Novel/research/`) rather than the type's `output_dir` (e.g., 
+ * `research/`), so they're not found when scanning the type's directory.
+ * This enforces the rule that owned notes cannot be referenced by other 
+ * notes' frontmatter fields.
  * 
  * @param schema - The loaded schema
  * @param vaultDir - The vault root directory  
@@ -212,19 +216,28 @@ export function getOutputDir(
 }
 
 // ============================================================================
-// Directory Mode Support (Legacy - to be removed when ownership is implemented)
+// Directory Mode Support (Legacy)
 // ============================================================================
 
 /**
  * Get directory mode for a type.
- * In the new model, this is determined by ownership, not dir_mode.
- * For now, return 'pooled' by default.
+ * 
+ * In the ownership model, notes are either:
+ * - "pooled": Live in the type's output_dir (default)
+ * - "owned": Live in their owner's folder (determined by `owned: true` on parent's field)
+ * 
+ * This function returns 'pooled' because the ownership model handles colocation
+ * through the ownership system rather than a separate dir_mode property.
+ * See docs/technical/inheritance.md for ownership semantics.
+ * 
+ * @deprecated Consider using canTypeBeOwned() or getOwnerTypes() for ownership checks
  */
 export function getDirMode(
   _schema: LoadedSchema,
   _typeName: string
 ): 'pooled' | 'instance-grouped' {
-  // TODO: Implement based on ownership model
+  // Ownership model supersedes dir_mode - owned notes colocate with owner,
+  // all other notes are pooled in their type's output_dir
   return 'pooled';
 }
 
