@@ -172,8 +172,8 @@ or create a parent instance folder.`)
         
         // Open if requested (respects BWRB_DEFAULT_APP)
         if (options.open && filePath) {
-          const { openNote } = await import('./open.js');
-          await openNote(vaultDir, filePath);
+          const { openNote, parseAppMode } = await import('./open.js');
+          await openNote(vaultDir, filePath, parseAppMode(), false);
         }
         return;
       }
@@ -240,8 +240,8 @@ or create a parent instance folder.`)
 
       // Open if requested (respects BWRB_DEFAULT_APP)
       if (options.open && filePath) {
-        const { openNote } = await import('./open.js');
-        await openNote(vaultDir, filePath);
+        const { openNote, parseAppMode } = await import('./open.js');
+        await openNote(vaultDir, filePath, parseAppMode(), false);
       }
     } catch (err) {
       // Handle user cancellation cleanly

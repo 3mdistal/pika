@@ -19,7 +19,7 @@ import {
   warnDeprecated,
   type ListOutputFormat,
 } from '../lib/output.js';
-import { openNote } from './open.js';
+import { openNote, parseAppMode } from './open.js';
 import { pickFile, parsePickerMode } from '../lib/picker.js';
 import type { LoadedSchema } from '../types/schema.js';
 import {
@@ -421,7 +421,7 @@ async function listObjects(
       targetPath = filteredFiles[0]!.path;
     }
     
-    await openNote(vaultDir, targetPath, options.app, jsonMode);
+    await openNote(vaultDir, targetPath, parseAppMode(options.app), jsonMode);
     return;
   }
 
