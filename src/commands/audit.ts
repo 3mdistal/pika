@@ -11,7 +11,7 @@ import {
   getTypeDefByPath,
 } from '../lib/schema.js';
 import { resolveVaultDir } from '../lib/vault.js';
-import { printError, printWarning } from '../lib/prompt.js';
+import { printError } from '../lib/prompt.js';
 import {
   printJson,
   jsonError,
@@ -19,7 +19,6 @@ import {
 } from '../lib/output.js';
 import {
   parsePositionalArg,
-  getTypePositionalDeprecationWarning,
 } from '../lib/targeting.js';
 
 // Import from audit modules
@@ -141,14 +140,6 @@ Examples:
 
       // Handle positional argument with smart detection
       if (target) {
-        if (typePath || pathGlob || whereExprs) {
-          // Positional provided along with explicit flags - emit deprecation warning
-          const deprecation = getTypePositionalDeprecationWarning('audit');
-          if (deprecation) {
-            printWarning(deprecation);
-          }
-        }
-        
         const existingOpts: Record<string, string | string[] | undefined> = {};
         if (typePath) existingOpts.type = typePath;
         if (pathGlob) existingOpts.path = pathGlob;
@@ -166,11 +157,6 @@ Examples:
         // Apply parsed positional to appropriate option
         if (parsed.options.type && !typePath) {
           typePath = parsed.options.type;
-          // Emit deprecation warning for positional type
-          const deprecation = getTypePositionalDeprecationWarning('audit');
-          if (deprecation) {
-            printWarning(deprecation);
-          }
         }
         if (parsed.options.path && !pathGlob) {
           pathGlob = parsed.options.path;

@@ -4,7 +4,6 @@ import {
   detectPositionalType,
   parsePositionalArg,
   checkDeprecatedFilters,
-  getTypePositionalDeprecationWarning,
   filterByPath,
   resolveTargets,
   validateDestructiveTargeting,
@@ -121,14 +120,6 @@ describe('targeting', () => {
       const result = checkDeprecatedFilters(['--type', 'task', '--path', 'Projects/**']);
       expect(result.filters).toHaveLength(0);
       expect(result.warnings).toHaveLength(0);
-    });
-  });
-
-  describe('getTypePositionalDeprecationWarning', () => {
-    it('generates correct warning message', () => {
-      const warning = getTypePositionalDeprecationWarning('task');
-      expect(warning).toContain('Deprecation warning');
-      expect(warning).toContain('--type task');
     });
   });
 

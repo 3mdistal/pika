@@ -31,7 +31,6 @@ import { buildOperation, formatChange } from '../lib/bulk/operations.js';
 import { executeBulk } from '../lib/bulk/execute.js';
 import {
   parsePositionalArg,
-  getTypePositionalDeprecationWarning,
   hasAnyTargeting,
   checkDeprecatedFilters,
 } from '../lib/targeting.js';
@@ -137,7 +136,7 @@ Examples:
 
   # Move files to archive (updates wikilinks automatically)
   bwrb bulk --type idea --where "status == 'settled'" --move Archive/Ideas --execute`)
-  .argument('[target]', 'Type, path, or where expression (auto-detected) [DEPRECATED: use --type, --path, or --where]')
+  .argument('[target]', 'Type, path, or where expression (auto-detected)')
   .option('-t, --type <type>', 'Filter by type (e.g., task, objective/milestone)')
   .option('-p, --path <glob>', 'Filter by file path (supports globs)')
   .option('-b, --body <query>', 'Filter by body content')
@@ -176,7 +175,7 @@ Examples:
       let whereExpressions = options.where ?? [];
       const bodyQuery = options.body ?? options.text;
 
-      // Handle positional argument (deprecated)
+      // Handle positional argument
       if (target) {
         const parsed = parsePositionalArg(target, schema, {});
         if (parsed.error) {
@@ -186,11 +185,6 @@ Examples:
           }
           printError(parsed.error);
           process.exit(1);
-        }
-
-        // Emit deprecation warning
-        if (parsed.detectedAs === 'type' && parsed.options.type) {
-          console.error(getTypePositionalDeprecationWarning(parsed.options.type));
         }
 
         // Apply the detected value
