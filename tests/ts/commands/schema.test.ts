@@ -387,4 +387,772 @@ describe('schema command', () => {
       }
     });
   });
+
+  describe('schema edit-type', () => {
+    it('should change output directory', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-type-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              output_dir: 'Tasks',
+              fields: { status: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-type', 'task', '--output-dir', 'NewTasks'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated type');
+
+        // Verify the change was applied
+        const verifyResult = await runCLI(
+          ['schema', 'show', 'task', '--output', 'json'],
+          tempVaultDir
+        );
+        const data = JSON.parse(verifyResult.stdout);
+        expect(data.output_dir).toBe('NewTasks');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should change extends (reparent type)', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-type-extends-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: { fields: { created: { prompt: 'date' } } },
+            objective: { extends: 'meta', fields: { status: { prompt: 'input' } } },
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-type', 'task', '--extends', 'objective'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+
+        // Verify the change was applied
+        const verifyResult = await runCLI(
+          ['schema', 'show', 'task', '--output', 'json'],
+          tempVaultDir
+        );
+        const data = JSON.parse(verifyResult.stdout);
+        expect(data.extends).toBe('objective');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should change filename pattern', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-type-filename-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-type', 'task', '--filename', '{status} - {title}'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+
+        // Verify the change was applied by reading raw schema
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.filename).toBe('{status} - {title}');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error on unknown type', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-type-unknown-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: { meta: {} }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-type', 'nonexistent', '--output-dir', 'Foo'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('Unknown type');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should output JSON when --output json is specified', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-type-json-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-type', 'task', '--output-dir', 'NewTasks', '--output', 'json'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        const data = JSON.parse(result.stdout);
+        expect(data.success).toBe(true);
+        expect(data.message).toContain('Updated');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('schema remove-type', () => {
+    it('should show dry-run by default', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-type-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Tasks'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+      // Create a task file
+      await writeFile(
+        join(tempVaultDir, 'Tasks', 'Test Task.md'),
+        '---\ntype: task\n---\nTest content'
+      );
+
+      try {
+        // Run without --execute, should be dry-run
+        const result = await runCLI(
+          ['schema', 'remove-type', 'task', '--output', 'json'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        const data = JSON.parse(result.stdout);
+        expect(data.dryRun).toBe(true);
+        expect(data.affectedFiles).toBe(1);
+
+        // Verify the type still exists
+        const verifyResult = await runCLI(['schema', 'show', 'task'], tempVaultDir);
+        expect(verifyResult.exitCode).toBe(0);
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should remove type with --execute flag', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-type-exec-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-type', 'task', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Removed type');
+
+        // Verify the type is gone
+        const verifyResult = await runCLI(['schema', 'show', 'task'], tempVaultDir);
+        expect(verifyResult.exitCode).toBe(1);
+        expect(verifyResult.stderr).toContain('Unknown type');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error when type has child types', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-type-children-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            objective: { extends: 'meta' },
+            task: { extends: 'objective' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-type', 'objective', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('child types');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error on unknown type', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-type-unknown-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: { meta: {} }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-type', 'nonexistent', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('Unknown type');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should prevent removing meta type', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-meta-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: { meta: { fields: { created: { prompt: 'date' } } } }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-type', 'meta', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('Cannot remove');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('schema edit-field', () => {
+    it('should change field required status with --required flag', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { status: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'status', '--required'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated field');
+
+        // Verify the change
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.status.required).toBe(true);
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should change field to not-required with --not-required flag', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-not-req-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { status: { prompt: 'input', required: true } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'status', '--not-required'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated field');
+
+        // Verify the change
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.status.required).toBeUndefined();
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should change field default value', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-default-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { priority: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'priority', '--default', 'medium'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+
+        // Verify the change
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.priority.default).toBe('medium');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should clear field default with --clear-default', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-clear-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { priority: { prompt: 'input', default: 'low' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'priority', '--clear-default'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+
+        // Verify the change
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.priority.default).toBeUndefined();
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should change field label', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-label-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { deadline: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'deadline', '--label', 'Due Date'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+
+        // Verify the change
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.deadline.label).toBe('Due Date');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error when field is not directly on type (inherited)', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-inherited-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: { fields: { created: { prompt: 'date' } } },
+            task: { extends: 'meta' }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'created', '--label', 'Created Date'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('inherited');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error on unknown field', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-unknown-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', fields: { status: { prompt: 'input' } } }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'nonexistent', '--label', 'Test'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('not found');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should output JSON when --output json is specified', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-edit-field-json-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { status: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'edit-field', 'task', 'status', '--label', 'Status', '--output', 'json'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        const data = JSON.parse(result.stdout);
+        expect(data.success).toBe(true);
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('schema remove-field', () => {
+    it('should show dry-run by default', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-field-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Tasks'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              output_dir: 'Tasks',
+              fields: { status: { prompt: 'input' }, deadline: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+      // Create a task file with the field
+      await writeFile(
+        join(tempVaultDir, 'Tasks', 'Test Task.md'),
+        '---\ntype: task\nstatus: active\ndeadline: tomorrow\n---\nTest content'
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-field', 'task', 'deadline', '--output', 'json'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        const data = JSON.parse(result.stdout);
+        expect(data.dryRun).toBe(true);
+        expect(data.affectedFiles).toBe(1);
+
+        // Verify the field still exists
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.deadline).toBeDefined();
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should remove field with --execute flag', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-field-exec-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: {
+              extends: 'meta',
+              fields: { status: { prompt: 'input' }, deadline: { prompt: 'input' } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-field', 'task', 'deadline', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Removed field');
+
+        // Verify the field is gone
+        const { readFile } = await import('fs/promises');
+        const schema = JSON.parse(
+          await readFile(join(tempVaultDir, '.pika', 'schema.json'), 'utf8')
+        );
+        expect(schema.types.task.fields.deadline).toBeUndefined();
+        expect(schema.types.task.fields.status).toBeDefined(); // Other field still there
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error when field is inherited', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-field-inherited-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: { fields: { created: { prompt: 'date' } } },
+            task: { extends: 'meta', fields: { status: { prompt: 'input' } } }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-field', 'task', 'created', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('inherited');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error on unknown field', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-field-unknown-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', fields: { status: { prompt: 'input' } } }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-field', 'task', 'nonexistent', '--execute'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('not found');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should show child types affected by field removal', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'pika-remove-field-children-'));
+      await mkdir(join(tempVaultDir, '.pika'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Tasks'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Milestones'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.pika', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            objective: {
+              extends: 'meta',
+              fields: { status: { prompt: 'input' } }
+            },
+            task: { extends: 'objective', output_dir: 'Tasks' },
+            milestone: { extends: 'objective', output_dir: 'Milestones' }
+          }
+        })
+      );
+      await writeFile(
+        join(tempVaultDir, 'Tasks', 'Task1.md'),
+        '---\ntype: task\nstatus: active\n---\n'
+      );
+      await writeFile(
+        join(tempVaultDir, 'Milestones', 'M1.md'),
+        '---\ntype: milestone\nstatus: done\n---\n'
+      );
+
+      try {
+        const result = await runCLI(
+          ['schema', 'remove-field', 'objective', 'status', '--output', 'json'],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        const data = JSON.parse(result.stdout);
+        expect(data.dryRun).toBe(true);
+        // Should count files from both child types
+        expect(data.affectedFiles).toBe(2);
+        expect(data.childTypes).toContain('task');
+        expect(data.childTypes).toContain('milestone');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
 });
