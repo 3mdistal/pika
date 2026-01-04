@@ -93,6 +93,11 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Fixed
 
+- **Removed incorrect positional type deprecation warnings from audit and bulk commands** (#127)
+  - `bwrb audit task` and `bwrb bulk task --set x=y` no longer show deprecation warnings
+  - Positional type is a permanent CLI shortcut as documented in `cli-targeting.md`
+  - Removed unused `getTypePositionalDeprecationWarning` function from targeting module
+
 - **`bwrb schema add-field meta` now works correctly** (bwrb-tsbb)
   - Previously failed with `Type "meta" not found in raw schema` when meta was implicit
   - Now creates the meta type definition in schema.json when adding a field to implicit meta

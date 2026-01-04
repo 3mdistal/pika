@@ -219,15 +219,6 @@ export function checkDeprecatedFilters(
   return { filters, warnings };
 }
 
-/**
- * Generate deprecation warning for type positional argument.
- */
-export function getTypePositionalDeprecationWarning(typeName: string): string {
-  return `Deprecation warning: Positional type argument is deprecated.\n` +
-    `Use --type flag instead:\n` +
-    `  --type ${typeName}`;
-}
-
 // ============================================================================
 // Path Filtering
 // ============================================================================

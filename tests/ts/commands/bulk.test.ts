@@ -750,6 +750,36 @@ This task relates to [[Sample Idea]].
   });
 });
 
+describe('bulk positional type argument', () => {
+  let vaultDir: string;
+
+  beforeAll(async () => {
+    vaultDir = await createTestVault();
+  });
+
+  afterAll(async () => {
+    await cleanupTestVault(vaultDir);
+  });
+
+  it('should not show deprecation warning when using positional type', async () => {
+    const result = await runCLI(['bulk', 'idea', '--all', '--set', 'status=settled'], vaultDir);
+
+    expect(result.exitCode).toBe(0);
+    // Positional type is a permanent shortcut, not deprecated
+    expect(result.stderr).not.toContain('deprecated');
+    expect(result.stderr).not.toContain('Deprecated');
+    expect(result.stdout).not.toContain('deprecated');
+  });
+
+  it('should not show deprecation warning for child type positional', async () => {
+    const result = await runCLI(['bulk', 'task', '--all', '--set', 'status=settled'], vaultDir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).not.toContain('deprecated');
+    expect(result.stderr).not.toContain('Deprecated');
+  });
+});
+
 describe('bulk operations unit tests', () => {
   describe('applyOperations', () => {
     // Import dynamically in tests

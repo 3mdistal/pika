@@ -1730,6 +1730,26 @@ milestone: "[[Some Idea]]"
     });
   });
 
+  describe('positional type argument', () => {
+    it('should not show deprecation warning when using positional type', async () => {
+      const result = await runCLI(['audit', 'idea'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      // Positional type is a permanent shortcut, not deprecated
+      expect(result.stderr).not.toContain('deprecated');
+      expect(result.stderr).not.toContain('Deprecated');
+      expect(result.stdout).not.toContain('deprecated');
+    });
+
+    it('should not show deprecation warning for child type positional', async () => {
+      const result = await runCLI(['audit', 'task'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).not.toContain('deprecated');
+      expect(result.stderr).not.toContain('Deprecated');
+    });
+  });
+
   describe('parent cycle detection', () => {
     let tempVaultDir: string;
 
