@@ -4,6 +4,14 @@ All notable changes to Pika are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Ownership model completion** (pika-9g9/#88)
+  - `queryByType()` now explicitly excludes owned notes from dynamic source results
+  - Owned notes cannot be selected when populating frontmatter fields on other notes
+  - `pika list` continues to show all notes including owned (for discoverability)
+  - Added documentation for ownership visibility semantics in type-system.md
+
 ### Added
 
 - **Schema management CLI** (pika-tsh)

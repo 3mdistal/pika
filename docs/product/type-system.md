@@ -82,6 +82,25 @@ Schema fields are typed and validated. Body text wikilinks are unrestricted — 
 
 ---
 
+## Ownership Visibility
+
+Owned notes have special visibility rules:
+
+| Command | Owned Notes | Rationale |
+|---------|-------------|-----------|
+| `pika list` | **Included** | Discovery — nothing feels lost |
+| `pika search` | **Included** | Discovery — find any note by content |
+| Field prompts | **Excluded** | Can't reference owned notes in frontmatter |
+| `pika open` | **Included** | Can open any note directly |
+
+**Why exclude from field prompts?**
+
+When selecting a value for a field (e.g., "which research note?"), owned notes don't appear because they can't be referenced by other notes' frontmatter. This enforces the ownership boundary — if you need to reference something across notes, it should be shared (in the type's folder), not owned.
+
+**Body wikilinks are unrestricted.** You can manually type `[[Owned Note]]` in the body — the schema doesn't validate body content.
+
+---
+
 ## User Decisions
 
 When creating a type, the user decides:
