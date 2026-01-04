@@ -22,8 +22,8 @@ All notable changes to Bowerbird are documented in this file.
   - `bwrb audit --fix` now handles `invalid-source-type` issues interactively
   - Fix options: select valid replacement note, clear field, skip, or quit
 
-- **Preview flag for open command** (#98)
-  - `bwrb open --preview` shows file contents in fzf picker
+- **Preview flag for open and search commands** (#98)
+  - `bwrb open --preview` and `bwrb search --open --preview` show file contents in fzf picker
   - Uses `bat` for syntax highlighting when available, falls back to `cat`
   - Preview pane shows first 100 lines of selected file
 

@@ -63,14 +63,43 @@ function isTTY(): boolean {
 }
 
 /**
- * Check if bat is available on the system.
+ * Check if a command is available on the system.
+ * Tries the command with --version to verify it works.
  */
-async function isBatAvailable(): Promise<boolean> {
+async function isCommandAvailable(cmd: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const proc = spawn('which', ['bat'], { stdio: 'ignore' });
+    const proc = spawn(cmd, ['--version'], { stdio: 'ignore' });
     proc.on('close', (code) => resolve(code === 0));
     proc.on('error', () => resolve(false));
   });
+}
+
+// Cache for bat command availability (null = not checked, string = command name, false = not available)
+let batCommand: string | false | null = null;
+
+/**
+ * Get the bat command if available (bat or batcat on some Linux distros).
+ * Returns the command name or null if not available.
+ */
+async function getBatCommand(): Promise<string | null> {
+  if (batCommand !== null) {
+    return batCommand === false ? null : batCommand;
+  }
+  
+  // Try 'bat' first (most common)
+  if (await isCommandAvailable('bat')) {
+    batCommand = 'bat';
+    return 'bat';
+  }
+  
+  // Try 'batcat' (Debian/Ubuntu package name)
+  if (await isCommandAvailable('batcat')) {
+    batCommand = 'batcat';
+    return 'batcat';
+  }
+  
+  batCommand = false;
+  return null;
 }
 
 /**
@@ -92,11 +121,14 @@ async function pickWithFzf(
 
   // Add preview if enabled and we have a vault dir
   if (preview && vaultDir) {
-    const useBat = await isBatAvailable();
+    const batCmd = await getBatCommand();
+    // Escape single quotes in vaultDir for shell safety
+    const escapedVaultDir = vaultDir.replace(/'/g, "'\\''");
     // Use bat for syntax highlighting if available, otherwise cat
-    const previewCmd = useBat
-      ? `bat --style=numbers --color=always --line-range=:100 "${vaultDir}/{}"`
-      : `cat "${vaultDir}/{}"`;
+    // The preview command uses single quotes and proper escaping for paths with spaces
+    const previewCmd = batCmd
+      ? `${batCmd} --style=numbers --color=always --line-range=:100 -- '${escapedVaultDir}/'{}`
+      : `cat -- '${escapedVaultDir}/'{}`; 
     fzfArgs.push('--preview', previewCmd);
     fzfArgs.push('--preview-window', 'right:50%:wrap');
   }
