@@ -146,9 +146,20 @@ export function resolveSchema(schema: Schema): LoadedSchema {
   for (const type of types.values()) {
     if (type.recursive && !type.fields['parent']) {
       // Auto-create the parent field for recursive types
+      // If the type extends another type, parent can be either the extended type OR same type
+      // This enables mixed hierarchies like: scene -> chapter OR scene -> scene
+      let source: string | string[];
+      if (type.parent && type.parent !== META_TYPE) {
+        // Type extends another type - allow both as valid parents
+        source = [type.parent, type.name];
+      } else {
+        // No extends (or extends meta) - parent can only be same type
+        source = type.name;
+      }
+      
       type.fields['parent'] = {
         prompt: 'dynamic',
-        source: type.name,
+        source,
         format: 'wikilink',
         required: false,
       };
@@ -356,7 +367,9 @@ function buildOwnershipMap(types: Map<string, ResolvedType>): OwnershipMap {
     for (const [fieldName, field] of Object.entries(ownerType.fields)) {
       // Check if this field declares ownership
       if (field.owned === true && field.source) {
-        const childType = field.source;
+        // For ownership, use the first source type (arrays are for parent field accepting multiple types)
+        const childType = Array.isArray(field.source) ? field.source[0] : field.source;
+        if (!childType) continue;
         const multiple = field.multiple ?? false;
         
         // Add to owner's "owns" list

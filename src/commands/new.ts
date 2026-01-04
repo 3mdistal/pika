@@ -49,6 +49,7 @@ import {
   applyDefaults,
   validateContextFields,
 } from '../lib/validation.js';
+import { validateParentNoCycle } from '../lib/hierarchy.js';
 import {
   printJson,
   jsonSuccess,
@@ -362,6 +363,27 @@ async function createNoteFromJson(
           message: e.message,
           constraint: e.constraint,
         })),
+      });
+      process.exit(ExitCodes.VALIDATION_ERROR);
+    }
+  }
+
+  // Validate parent field doesn't create a cycle (for recursive types)
+  if (typeDef.recursive && frontmatter['parent']) {
+    const cycleError = await validateParentNoCycle(
+      schema,
+      vaultDir,
+      frontmatter['name'] as string,
+      frontmatter['parent'] as string
+    );
+    if (cycleError) {
+      printJson({
+        success: false,
+        error: cycleError.message,
+        errors: [{
+          field: cycleError.field,
+          message: cycleError.message,
+        }],
       });
       process.exit(ExitCodes.VALIDATION_ERROR);
     }
