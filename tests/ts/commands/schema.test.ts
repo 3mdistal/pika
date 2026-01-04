@@ -1174,12 +1174,14 @@ describe('schema command', () => {
 
       try {
         const result = await runCLI(
-          ['schema', 'new', 'type', 'note', '--extends', 'meta', '--output-dir', 'Notes'],
+          ['schema', 'new', 'type', 'note', '--inherits', 'meta', '--directory', 'Notes', '--output', 'json'],
           tempVaultDir
         );
 
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Created type');
+        const data = JSON.parse(result.stdout);
+        expect(data.success).toBe(true);
+        expect(data.data.type).toBe('note');
 
         // Verify the type was created
         const schema = JSON.parse(
@@ -1213,7 +1215,7 @@ describe('schema command', () => {
         expect(result.exitCode).toBe(0);
         const data = JSON.parse(result.stdout);
         expect(data.success).toBe(true);
-        expect(data.type).toBe('note');
+        expect(data.data.type).toBe('note');
       } finally {
         await rm(tempVaultDir, { recursive: true, force: true });
       }
