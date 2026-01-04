@@ -2322,7 +2322,7 @@ Examples:
 
 // schema new (no args - prompt for entity type)
 newCommand
-  .action(async (options: NewCommandOptions, cmd: Command) => {
+  .action(async (options: NewCommandOptions, _cmd: Command) => {
     const jsonMode = options.output === 'json';
 
     try {
@@ -2541,10 +2541,11 @@ newCommand
       if (!rawSchema.types?.[typeName]) {
         throw new Error(`Type "${typeName}" not found in schema`);
       }
-      if (!rawSchema.types[typeName].fields) {
-        rawSchema.types[typeName].fields = {};
+      const targetType = rawSchema.types[typeName]!;
+      if (!targetType.fields) {
+        targetType.fields = {};
       }
-      rawSchema.types[typeName].fields![fieldName] = fieldDef;
+      targetType.fields[fieldName] = fieldDef;
       await writeSchema(vaultDir, rawSchema);
 
       if (jsonMode) {
@@ -2673,7 +2674,7 @@ Examples:
 
 // schema edit (no args - prompt for entity type)
 editCommand
-  .action(async (options: EditCommandOptions, cmd: Command) => {
+  .action(async (options: EditCommandOptions, _cmd: Command) => {
     const jsonMode = options.output === 'json';
 
     try {
@@ -2737,7 +2738,7 @@ editCommand
         throw new Error('Interactive edit required. Use specific flags in JSON mode.');
       }
 
-      const typeEntry = schema.raw.types[typeName];
+      // Type entry available via schema.raw.types[typeName] if needed
       console.log(chalk.bold(`\nEditing type: ${typeName}\n`));
       
       const editOptions = ['Edit output directory', 'Edit inheritance', 'Add field', 'Done'];
@@ -2760,7 +2761,7 @@ editCommand
             printSuccess(`Output directory updated to "${newDir}"`);
           }
         } else if (choice === 'Edit inheritance') {
-          const currentExtends = typeEntry?.extends;
+          // currentExtends available via typeEntry?.extends if needed
           const availableTypes = getTypeNames(schema).filter(t => t !== typeName && t !== 'meta');
           if (availableTypes.length === 0) {
             printError('No other types available for inheritance');
@@ -2795,10 +2796,11 @@ editCommand
           if (!freshSchema.types?.[typeName]) {
             throw new Error(`Type "${typeName}" not found in schema`);
           }
-          if (!freshSchema.types[typeName].fields) {
-            freshSchema.types[typeName].fields = {};
+          const targetType = freshSchema.types[typeName]!;
+          if (!targetType.fields) {
+            targetType.fields = {};
           }
-          freshSchema.types[typeName].fields![fieldName] = fieldDef.field;
+          targetType.fields[fieldName] = fieldDef.field;
           await writeSchema(vaultDir, freshSchema);
           printSuccess(`Field "${fieldName}" added`);
         }
@@ -2897,8 +2899,9 @@ editCommand
         if (choice === 'Change prompt type') {
           const promptOptions = ['input', 'select', 'multi-input', 'date', 'dynamic'];
           const newPrompt = await promptSelection('Prompt type', promptOptions);
-          if (newPrompt !== null) {
-            rawTypeEntry.fields[fieldName].prompt = newPrompt as Field['prompt'];
+          const fieldEntry = rawTypeEntry.fields?.[fieldName];
+          if (newPrompt !== null && fieldEntry) {
+            fieldEntry.prompt = newPrompt as Field['prompt'];
             
             // If select type, prompt for enum name
             if (newPrompt === 'select') {
@@ -2907,7 +2910,7 @@ editCommand
               if (enumNames.length > 0) {
                 const enumChoice = await promptSelection('Select enum (or skip)', ['(none)', ...enumNames]);
                 if (enumChoice !== null && enumChoice !== '(none)') {
-                  rawTypeEntry.fields[fieldName].enum = enumChoice;
+                  fieldEntry.enum = enumChoice;
                 }
               }
             }
@@ -2916,21 +2919,27 @@ editCommand
             printSuccess(`Field prompt type updated to "${newPrompt}"`);
           }
         } else if (choice === 'Toggle required') {
-          const currentRequired = rawTypeEntry.fields[fieldName].required ?? false;
-          rawTypeEntry.fields[fieldName].required = !currentRequired;
-          await writeSchema(vaultDir, rawSchema);
-          printSuccess(`Required set to ${!currentRequired}`);
-        } else if (choice === 'Set default') {
-          const currentDefault = rawTypeEntry.fields[fieldName]?.default;
-          const newDefault = await promptInput('Default value', currentDefault?.toString() ?? '');
-          if (newDefault !== null) {
-            if (newDefault === '') {
-              delete rawTypeEntry.fields[fieldName].default;
-            } else {
-              rawTypeEntry.fields[fieldName].default = newDefault;
-            }
+          const fieldEntry = rawTypeEntry.fields?.[fieldName];
+          if (fieldEntry) {
+            const currentRequired = fieldEntry.required ?? false;
+            fieldEntry.required = !currentRequired;
             await writeSchema(vaultDir, rawSchema);
-            printSuccess(`Default value updated`);
+            printSuccess(`Required set to ${!currentRequired}`);
+          }
+        } else if (choice === 'Set default') {
+          const fieldEntry = rawTypeEntry.fields?.[fieldName];
+          if (fieldEntry) {
+            const currentDefault = fieldEntry.default;
+            const newDefault = await promptInput('Default value', currentDefault?.toString() ?? '');
+            if (newDefault !== null) {
+              if (newDefault === '') {
+                delete fieldEntry.default;
+              } else {
+                fieldEntry.default = newDefault;
+              }
+              await writeSchema(vaultDir, rawSchema);
+              printSuccess(`Default value updated`);
+            }
           }
         }
       }
@@ -3125,7 +3134,7 @@ Examples:
 
 // schema delete (no args - prompt for entity type)
 deleteCommand
-  .action(async (options: DeleteCommandOptions, cmd: Command) => {
+  .action(async (options: DeleteCommandOptions, _cmd: Command) => {
     const jsonMode = options.output === 'json';
 
     try {
