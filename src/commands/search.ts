@@ -11,9 +11,10 @@ import { readFile } from 'fs/promises';
 import { basename } from 'path';
 import { resolveVaultDir } from '../lib/vault.js';
 import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
-import { printError } from '../lib/prompt.js';
+import { printError, printSuccess } from '../lib/prompt.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes, exitWithResolutionError, warnDeprecated, type SearchOutputFormat } from '../lib/output.js';
-import { openNote } from './open.js';
+import { openNote, parseAppMode } from './open.js';
+import { editNoteFromJson, editNoteInteractive } from '../lib/edit.js';
 import {
   buildNoteIndex,
   generateWikilink,
@@ -49,6 +50,9 @@ interface SearchOptions {
   open?: boolean;
   app?: string;
   preview?: boolean;
+  // Edit options
+  edit?: boolean;
+  json?: string;  // JSON patch data for --edit mode
   // Content search options
   body?: boolean;
   /** @deprecated Use body instead */
@@ -129,6 +133,8 @@ export const searchCommand = new Command('search')
   .option('--content', 'DEPRECATED: use --output content')
   // Open and picker options
   .option('--open', 'Open the selected note after search')
+  .option('--edit', 'Edit the selected note\'s frontmatter after search')
+  .option('--json <patch>', 'JSON patch data for --edit mode (non-interactive)')
   .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
   .option('--preview', 'Show file preview in fzf picker (requires fzf)')
   .option('--picker <mode>', 'Selection mode: auto (default), fzf, numbered, none')
@@ -187,6 +193,10 @@ Open Options:
   --open               Open the selected note in an app
   --app <mode>         How to open: obsidian (default), editor, system, print
 
+Edit Options:
+  --edit               Edit the selected note's frontmatter
+  --json <patch>       JSON patch data for non-interactive edit (use with --edit)
+
 App Modes:
   obsidian    Open in Obsidian via URI scheme (default)
   editor      Open in $VISUAL or $EDITOR
@@ -202,6 +212,8 @@ Examples:
   bwrb search "My Note" --output link      # Output: [[My Note]]
   bwrb search "My Note" --open             # Find and open in Obsidian
   bwrb search "My Note" --open --app editor  # Find and open in $EDITOR
+  bwrb search "My Note" --edit             # Find and edit frontmatter
+  bwrb search "My Note" --edit --json '{"status":"done"}'  # Non-interactive edit
   
   # Content search
   bwrb search "deploy" --body              # Search all notes for "deploy"
@@ -229,6 +241,28 @@ Examples:
     if (options.pathGlob && !options.path) {
       warnDeprecated('--path-glob', '--path');
       options.path = options.pathGlob;
+    }
+
+    // Validate mutual exclusivity of --open and --edit
+    if (options.open && options.edit) {
+      const error = 'Cannot use --open and --edit together. Choose one action.';
+      if (jsonMode) {
+        printJson(jsonError(error));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(error);
+      process.exit(1);
+    }
+
+    // --json requires --edit
+    if (options.json && !options.edit) {
+      const error = '--json requires --edit flag';
+      if (jsonMode) {
+        printJson(jsonError(error));
+        process.exit(ExitCodes.VALIDATION_ERROR);
+      }
+      printError(error);
+      process.exit(1);
     }
 
     try {
@@ -393,7 +427,21 @@ async function handleContentSearch(
 
     // Handle --open flag
     if (options.open) {
-      await openNote(vaultDir, pickerResult.selected.path, options.app, false);
+      const appMode = parseAppMode(options.app || "default");
+      await openNote(vaultDir, pickerResult.selected.path, appMode, false);
+      return;
+    }
+
+    // Handle --edit flag
+    if (options.edit) {
+      if (options.json) {
+        // Non-interactive JSON edit mode
+        await editNoteFromJson(schema, vaultDir, pickerResult.selected.path, options.json, { jsonMode: false });
+        printSuccess(`Updated: ${pickerResult.selected.relativePath}`);
+      } else {
+        // Interactive edit mode
+        await editNoteInteractive(schema, vaultDir, pickerResult.selected.path);
+      }
       return;
     }
 
@@ -405,7 +453,25 @@ async function handleContentSearch(
     // Handle --open flag (open first result)
     if (options.open && filteredResults.length > 0) {
       const firstResult = filteredResults[0]!;
-      await openNote(vaultDir, firstResult.file.path, options.app, jsonMode);
+      const appMode = parseAppMode(options.app || "default");
+      await openNote(vaultDir, firstResult.file.path, appMode, jsonMode);
+      return;
+    }
+
+    // Handle --edit flag (edit first result)
+    if (options.edit && filteredResults.length > 0) {
+      const firstResult = filteredResults[0]!;
+      if (options.json) {
+        const result = await editNoteFromJson(schema, vaultDir, firstResult.file.path, options.json, { jsonMode });
+        if (jsonMode) {
+          printJson(jsonSuccess({
+            path: firstResult.file.relativePath,
+            updated: result.updatedFields,
+          }));
+        }
+      } else {
+        await editNoteInteractive(schema, vaultDir, firstResult.file.path);
+      }
       return;
     }
 
@@ -520,7 +586,26 @@ async function handleNameSearch(
 
   // Handle --open flag
   if (options.open) {
-    await openNote(vaultDir, targetFile.path, options.app, jsonMode);
+    const appMode = parseAppMode(options.app || "default");
+    await openNote(vaultDir, targetFile.path, appMode, jsonMode);
+    return;
+  }
+
+  // Handle --edit flag
+  if (options.edit) {
+    if (options.json) {
+      // Non-interactive JSON edit mode
+      const result = await editNoteFromJson(schema, vaultDir, targetFile.path, options.json, { jsonMode });
+      if (jsonMode) {
+        printJson(jsonSuccess({
+          path: targetFile.relativePath,
+          updated: result.updatedFields,
+        }));
+      }
+    } else {
+      // Interactive edit mode
+      await editNoteInteractive(schema, vaultDir, targetFile.path);
+    }
     return;
   }
 

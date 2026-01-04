@@ -6,6 +6,15 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Changed
 
+- **Unified search/open/edit commands** (#119)
+  - `search` is now the single note-resolution core with `--open` and `--edit` modes
+  - `bwrb search "note" --edit` - Edit frontmatter of matching note
+  - `bwrb search "note" --edit --json '{"status":"done"}'` - Non-interactive edit via JSON patch
+  - `bwrb search "note" --open` - Open matching note (existing behavior)
+  - `open` and `edit` commands now use unified targeting (`--type`, `--path`, `--where`, `--body`)
+  - All three commands share the same resolution logic via `resolveAndPick`
+  - New shared `lib/edit.ts` module with `editNoteFromJson` and `editNoteInteractive` functions
+
 - **Unified verbs for schema commands** (#122)
   - New commands with consistent verb pattern: `schema new`, `schema edit`, `schema delete`, `schema list`
   - `schema new type/field/enum` - Create types, fields, and enums
