@@ -2633,8 +2633,8 @@ newCommand
 
       // Add to schema
       const rawSchema = await loadRawSchemaJson(vaultDir);
-      addEnum(rawSchema, enumName, values);
-      await writeSchema(vaultDir, rawSchema);
+      const updatedSchema = addEnum(rawSchema, enumName, values);
+      await writeSchema(vaultDir, updatedSchema);
 
       if (jsonMode) {
         printJson(jsonSuccess({
