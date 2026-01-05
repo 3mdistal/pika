@@ -34,10 +34,10 @@ Before creating or querying notes, understand the vault's schema:
 bwrb schema list
 
 # Show specific type definition
-bwrb schema list objective/task
+bwrb schema list task
 
 # List available enums
-bwrb schema enum list
+bwrb schema list enums
 ```
 
 ## Core Commands for Agents
@@ -47,17 +47,17 @@ bwrb schema enum list
 ```bash
 # List notes with JSON output (for parsing)
 bwrb list idea --output json
-bwrb list objective/task --output json
+bwrb list task --output json
 
 # Filter by frontmatter fields
-bwrb list task --where "status = 'active'" --output json
-bwrb list task --where "priority = 'high' && status != 'done'" --output json
+bwrb list task --where "status == 'active'" --output json
+bwrb list task --where "priority == 'high' && status != 'done'" --output json
 
 # Include specific fields in output
 bwrb list task --fields status,priority --output json
 
 # Full-text search in note content
-bwrb list --text "search term" --output json
+bwrb list --body "search term" --output json
 ```
 
 ### Creating Notes
@@ -65,7 +65,7 @@ bwrb list --text "search term" --output json
 ```bash
 # Non-interactive creation with JSON frontmatter
 bwrb new idea --json '{"name": "My Idea", "status": "raw"}'
-bwrb new objective/task --json '{"name": "Fix bug", "status": "backlog", "priority": "high"}'
+bwrb new task --json '{"name": "Fix bug", "status": "backlog", "priority": "high"}'
 
 # With template
 bwrb new task --template bug-report --json '{"name": "Login fails"}'
@@ -87,7 +87,7 @@ bwrb edit "Note Name" --json '{"status": "done"}'
 bwrb edit --type task "Fix bug" --json '{"priority": "high"}'
 
 # Filter then edit
-bwrb edit --type task --where "status = 'active'" "Deploy" --json '{"status": "done"}'
+bwrb edit --type task --where "status == 'active'" "Deploy" --json '{"status": "done"}'
 ```
 
 ### Finding Notes
@@ -115,9 +115,9 @@ bwrb audit --type task
 # JSON output for parsing issues
 bwrb audit --output json
 
-# Auto-fix issues (dry-run first)
+# Auto-fix issues (interactive repair)
 bwrb audit --fix
-bwrb audit --fix --execute  # Actually apply fixes
+bwrb audit --fix --auto  # Auto-apply unambiguous fixes
 ```
 
 ## Best Practices
@@ -133,14 +133,14 @@ bwrb audit --fix --execute  # Actually apply fixes
 
 ```bash
 # Equality
---where "status = 'active'"
+--where "status == 'active'"
 
 # Inequality
 --where "status != 'done'"
 
 # Logical operators
---where "priority = 'high' && status = 'active'"
---where "status = 'done' || status = 'cancelled'"
+--where "priority == 'high' && status == 'active'"
+--where "status == 'done' || status == 'cancelled'"
 
 # Comparison (for dates/numbers)
 --where "created > '2024-01-01'"
@@ -150,13 +150,13 @@ bwrb audit --fix --execute  # Actually apply fixes
 
 ```bash
 # Get all active tasks as JSON
-bwrb list task --where "status = 'active'" --output json
+bwrb list task --where "status == 'active'" --output json
 
 # Create a task and capture the path
 bwrb new task --json '{"name": "New Task", "status": "backlog"}' --output json
 
 # Bulk update (edit works on single notes; loop for bulk)
-for note in $(bwrb list task --where "status = 'in-progress'" --output paths); do
+for note in $(bwrb list task --where "status == 'in-progress'" --output paths); do
   bwrb edit "$note" --json '{"status": "done"}'
 done
 
