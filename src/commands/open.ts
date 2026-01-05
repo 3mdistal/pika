@@ -95,7 +95,7 @@ export async function openNote(
 /**
  * Open a note in Obsidian
  */
-export async function openInObsidian(
+async function openInObsidian(
   vaultDir: string,
   notePath: string
 ): Promise<void> {

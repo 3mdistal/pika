@@ -1,11 +1,6 @@
 import chalk from 'chalk';
 
 /**
- * Output mode for commands.
- */
-export type OutputMode = 'text' | 'json';
-
-/**
  * Output format options for list command.
  * 'text' is an alias for 'default' (the standard table/name output).
  */
@@ -77,13 +72,6 @@ export function printJson(data: JsonResult): void {
 }
 
 /**
- * Print a single-line JSON output.
- */
-export function printJsonCompact(data: JsonResult): void {
-  console.log(JSON.stringify(data));
-}
-
-/**
  * Create a success JSON response.
  */
 export function jsonSuccess<T = unknown>(
@@ -116,46 +104,6 @@ export function exitWithError(
     console.error(chalk.red(message));
   }
   process.exit(code);
-}
-
-/**
- * Exit with success output.
- */
-export function exitWithSuccess<T = unknown>(
-  result: Omit<JsonSuccess<T>, 'success'>,
-  textMessage: string,
-  jsonMode: boolean = false
-): void {
-  if (jsonMode) {
-    printJson(jsonSuccess(result));
-  } else {
-    console.log(chalk.green(textMessage));
-  }
-}
-
-/**
- * Determine output mode from command options.
- */
-export function getOutputMode(options: { output?: string; json?: string }): OutputMode {
-  if (options.output === 'json' || options.json !== undefined) {
-    return 'json';
-  }
-  return 'text';
-}
-
-/**
- * Check if we're in JSON output mode.
- */
-export function isJsonMode(options: { output?: string; json?: string }): boolean {
-  return getOutputMode(options) === 'json';
-}
-
-/**
- * Strip ANSI color codes from a string.
- */
-export function stripColors(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, '');
 }
 
 /**

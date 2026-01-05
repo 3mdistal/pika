@@ -407,7 +407,7 @@ export async function collectPooledFiles(
  * Collect owned files for an owner type.
  * Owned notes live in: {owner_folder}/{child_type}/
  */
-export async function collectOwnedFiles(
+async function collectOwnedFiles(
   schema: LoadedSchema,
   vaultDir: string,
   ownerTypeName: string
@@ -471,7 +471,7 @@ export async function collectOwnedFiles(
  * - Notes in the type's output_dir
  * - Owned notes that live with their owners
  */
-export async function collectFilesForTypeWithOwnership(
+async function collectFilesForTypeWithOwnership(
   schema: LoadedSchema,
   vaultDir: string,
   typeName: string

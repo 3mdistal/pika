@@ -4,7 +4,6 @@ import {
   BwrbSchema,
   type Schema,
   type Field,
-  type BodySection,
   type ResolvedType,
   type LoadedSchema,
   type OwnershipMap,
@@ -69,18 +68,6 @@ export async function loadSchema(vaultDir: string): Promise<LoadedSchema> {
   const schema = BwrbSchema.parse(json);
   return resolveSchema(schema);
 }
-
-/**
- * Load raw schema without resolving inheritance (for migration tools).
- */
-export async function loadRawSchema(vaultDir: string): Promise<Schema> {
-  const schemaPath = join(vaultDir, SCHEMA_PATH);
-  const content = await readFile(schemaPath, 'utf-8');
-  const json = JSON.parse(content) as unknown;
-  return BwrbSchema.parse(json);
-}
-
-
 
 // ============================================================================
 // Schema Resolution (Inheritance Tree Building)
@@ -418,15 +405,6 @@ export function getTypeNames(schema: LoadedSchema): string[] {
 }
 
 /**
- * Get all leaf type names (types with no children).
- */
-export function getLeafTypeNames(schema: LoadedSchema): string[] {
-  return Array.from(schema.types.values())
-    .filter(t => t.children.length === 0)
-    .map(t => t.name);
-}
-
-/**
  * Get all concrete type names (types that can have instances).
  * In the new model, all types are potentially concrete.
  */
@@ -455,15 +433,6 @@ export function getDescendants(schema: LoadedSchema, typeName: string): string[]
 }
 
 /**
- * Check if a type is a descendant of another type.
- */
-export function isDescendantOf(schema: LoadedSchema, typeName: string, ancestorName: string): boolean {
-  const type = schema.types.get(typeName);
-  if (!type) return false;
-  return type.ancestors.includes(ancestorName);
-}
-
-/**
  * Get enum values by name.
  */
 export function getEnumValues(schema: LoadedSchema, enumName: string): string[] {
@@ -476,38 +445,6 @@ export function getEnumValues(schema: LoadedSchema, enumName: string): string[] 
 export function getFieldsForType(schema: LoadedSchema, typeName: string): Record<string, Field> {
   const type = getType(schema, typeName);
   return type?.fields ?? {};
-}
-
-/**
- * Get the field order for a type (already computed).
- */
-export function getFieldOrder(schema: LoadedSchema, typeName: string): string[] {
-  const type = getType(schema, typeName);
-  return type?.fieldOrder ?? [];
-}
-
-/**
- * Get body sections for a type.
- * Inherits from ancestors if not defined on the type itself.
- */
-export function getBodySections(schema: LoadedSchema, typeName: string): BodySection[] {
-  const type = schema.types.get(typeName);
-  if (!type) return [];
-  
-  // If type has body sections, use them
-  if (type.bodySections.length > 0) {
-    return type.bodySections;
-  }
-  
-  // Otherwise, check ancestors
-  for (const ancestorName of type.ancestors) {
-    const ancestor = schema.types.get(ancestorName);
-    if (ancestor && ancestor.bodySections.length > 0) {
-      return ancestor.bodySections;
-    }
-  }
-  
-  return [];
 }
 
 /**
@@ -751,18 +688,6 @@ export function getOwnerTypes(schema: LoadedSchema, childTypeName: string): Owne
  */
 export function getOwnedFields(schema: LoadedSchema, ownerTypeName: string): OwnedFieldInfo[] {
   return schema.ownership.owns.get(ownerTypeName) ?? [];
-}
-
-/**
- * Check if a specific type owns another specific type.
- */
-export function doesTypeOwn(
-  schema: LoadedSchema,
-  ownerTypeName: string,
-  childTypeName: string
-): boolean {
-  const ownedFields = schema.ownership.owns.get(ownerTypeName) ?? [];
-  return ownedFields.some(f => f.childType === childTypeName);
 }
 
 // ============================================================================

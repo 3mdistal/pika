@@ -67,13 +67,6 @@ export function getEnumUsage(schema: LoadedSchema, enumName: string): EnumUsage[
 }
 
 /**
- * Check if an enum is currently in use by any field.
- */
-export function isEnumInUse(schema: LoadedSchema, enumName: string): boolean {
-  return getEnumUsage(schema, enumName).length > 0;
-}
-
-/**
  * Get all enum names from a loaded schema.
  */
 export function getEnumNames(schema: LoadedSchema): string[] {

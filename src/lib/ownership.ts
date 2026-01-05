@@ -11,9 +11,7 @@ import { readdir } from 'fs/promises';
 import { join, dirname, relative } from 'path';
 import { existsSync } from 'fs';
 import { 
-  getType, 
   getOwnedFields,
-  resolveTypeFromFrontmatter,
   getOutputDir,
 } from './schema.js';
 import type { LoadedSchema } from '../types/schema.js';
@@ -299,70 +297,4 @@ export function extractWikilinkReferences(value: unknown): string[] {
   return references;
 }
 
-/**
- * Validate all frontmatter references in a note against ownership rules.
- */
-export async function validateFrontmatterReferences(
-  schema: LoadedSchema,
-  index: OwnershipIndex,
-  notePath: string,
-  frontmatter: Record<string, unknown>,
-  vaultDir: string
-): Promise<OwnershipValidation> {
-  const errors: OwnershipError[] = [];
-  const noteType = resolveTypeFromFrontmatter(schema, frontmatter);
-  
-  if (!noteType) {
-    return { valid: true, errors: [] };
-  }
-  
-  const type = getType(schema, noteType);
-  if (!type) {
-    return { valid: true, errors: [] };
-  }
-  
-  // Check each field that references other notes
-  for (const [fieldName, field] of Object.entries(type.fields)) {
-    if (field.format === 'wikilink' || field.format === 'quoted-wikilink') {
-      const value = frontmatter[fieldName];
-      const references = extractWikilinkReferences(value);
-      
-      for (const refName of references) {
-        // Find the referenced note's path
-        const refPath = await findNoteByName(vaultDir, refName);
-        
-        if (refPath) {
-          const validation = canReference(index, notePath, refPath);
-          errors.push(...validation.errors);
-        }
-      }
-    }
-  }
-  
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
 
-/**
- * Find a note by name in the vault.
- * Returns the relative path if found.
- */
-async function findNoteByName(
-  vaultDir: string,
-  noteName: string
-): Promise<string | undefined> {
-  // This is a simplified search - in a full implementation,
-  // we'd want to use the discovery module for proper indexing
-  
-  // Try exact path first
-  const directPath = `${noteName}.md`;
-  if (existsSync(join(vaultDir, directPath))) {
-    return directPath;
-  }
-  
-  // Could expand to search all directories, but for now
-  // we rely on the caller providing accurate names
-  return undefined;
-}

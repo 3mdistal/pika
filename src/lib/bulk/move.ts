@@ -37,7 +37,7 @@ export interface WikilinkReference {
 /**
  * Result of a file move operation.
  */
-export interface MoveResult {
+interface MoveResult {
   /** Original file path */
   oldPath: string;
   /** New file path */
@@ -319,7 +319,7 @@ export function updateWikilinksInContent(
 /**
  * Move a file to a new directory.
  */
-export async function moveFile(
+async function moveFile(
   filePath: string,
   targetDir: string,
   vaultDir: string,

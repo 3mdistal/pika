@@ -8,7 +8,7 @@ import type { BulkOperation, FieldChange, OperationType } from './types.js';
  * Parse an operation argument like "field=value" or "old=new".
  * Returns [field, value] or [oldField, newField] depending on context.
  */
-export function parseOperationArg(arg: string): [string, string] {
+function parseOperationArg(arg: string): [string, string] {
   const eqIndex = arg.indexOf('=');
   if (eqIndex === -1) {
     return [arg, ''];
@@ -24,7 +24,7 @@ export function parseOperationArg(arg: string): [string, string] {
  * - Numeric strings → number
  * - Everything else → string
  */
-export function parseValue(value: string): unknown {
+function parseValue(value: string): unknown {
   if (value === '') {
     return undefined;
   }
@@ -46,7 +46,7 @@ export function parseValue(value: string): unknown {
  * Apply a single operation to frontmatter and return the change.
  * Returns null if no change was made.
  */
-export function applySingleOperation(
+function applySingleOperation(
   frontmatter: Record<string, unknown>,
   operation: BulkOperation
 ): FieldChange | null {
@@ -209,7 +209,7 @@ export function applyOperations(
 /**
  * Format a value for display.
  */
-export function formatValue(value: unknown): string {
+function formatValue(value: unknown): string {
   if (value === undefined || value === null) {
     return '(empty)';
   }

@@ -38,7 +38,7 @@ import {
 /**
  * Apply a single fix to a file.
  */
-export async function applyFix(
+async function applyFix(
   schema: LoadedSchema,
   filePath: string,
   issue: AuditIssue,
@@ -126,7 +126,7 @@ export async function applyFix(
 /**
  * Remove a field from a file's frontmatter.
  */
-export async function removeField(
+async function removeField(
   schema: LoadedSchema,
   filePath: string,
   fieldName: string
@@ -171,7 +171,7 @@ export async function removeField(
 /**
  * Get the default value for a missing required field.
  */
-export function getDefaultValue(
+function getDefaultValue(
   schema: LoadedSchema,
   frontmatter: Record<string, unknown>,
   fieldName: string

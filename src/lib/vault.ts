@@ -1,8 +1,8 @@
 import { readdir, stat, mkdir } from 'fs/promises';
-import { join, basename, relative } from 'path';
+import { join, basename } from 'path';
 import { existsSync } from 'fs';
 import { parseNote } from './frontmatter.js';
-import type { LoadedSchema, FilterCondition, ResolvedType, OwnerInfo } from '../types/schema.js';
+import type { LoadedSchema, FilterCondition, OwnerInfo } from '../types/schema.js';
 import { 
   getOutputDir as getOutputDirFromSchema, 
   getType, 
@@ -231,120 +231,6 @@ export function getOutputDir(
 // Ownership Support
 // ============================================================================
 
-/**
- * Get the parent type name for an owned type.
- */
-export function getParentTypeName(
-  schema: LoadedSchema,
-  typeName: string
-): string | undefined {
-  const type = getType(schema, typeName);
-  return type?.parent;
-}
-
-/**
- * Generate a filename from a pattern.
- * Patterns:
- *   {title} - Note title
- *   {n} - Auto-incrementing number
- *   {date} - Today's date (YYYY-MM-DD)
- *   {date:format} - Formatted date
- *   Static - Literal filename
- */
-export async function generateFilename(
-  pattern: string | undefined,
-  instanceDir: string,
-  title: string
-): Promise<string> {
-  if (!pattern) {
-    return `${title}.md`;
-  }
-
-  let filename = pattern;
-
-  // Replace {title}
-  filename = filename.replace('{title}', title);
-
-  // Replace {date} or {date:format}
-  const now = new Date();
-  filename = filename.replace(/{date(?::([^}]+))?}/g, (_, format) => {
-    if (format) {
-      return formatDate(now, format);
-    }
-    return now.toISOString().split('T')[0] ?? '';
-  });
-
-  // Replace {n} with auto-incrementing number
-  if (filename.includes('{n}')) {
-    const n = await findNextNumber(instanceDir, pattern);
-    filename = filename.replace('{n}', String(n));
-  }
-
-  // Ensure .md extension
-  if (!filename.endsWith('.md')) {
-    filename += '.md';
-  }
-
-  return filename;
-}
-
-/**
- * Find the next number for {n} pattern in a directory.
- */
-async function findNextNumber(dir: string, pattern: string): Promise<number> {
-  if (!existsSync(dir)) return 1;
-
-  const entries = await readdir(dir);
-  const mdFiles = entries.filter(f => f.endsWith('.md'));
-
-  // Extract the number part from existing files
-  // Convert pattern to regex: "Draft v{n}.md" -> /Draft v(\d+)\.md/
-  const regexPattern = pattern
-    .replace('{title}', '.*')
-    .replace('{n}', '(\\d+)')
-    .replace(/{date(?::[^}]+)?}/g, '\\d{4}-\\d{2}-\\d{2}')
-    .replace(/\.md$/, '')
-    + '\\.md$';
-
-  const regex = new RegExp(regexPattern);
-  let maxN = 0;
-
-  for (const file of mdFiles) {
-    const match = file.match(regex);
-    if (match && match[1]) {
-      const n = parseInt(match[1], 10);
-      if (n > maxN) maxN = n;
-    }
-  }
-
-  return maxN + 1;
-}
-
-/**
- * Format a date with a simple format string.
- */
-function formatDate(date: Date, format: string): string {
-  const pad = (n: number) => n.toString().padStart(2, '0');
-
-  return format
-    .replace('YYYY', date.getFullYear().toString())
-    .replace('MM', pad(date.getMonth() + 1))
-    .replace('DD', pad(date.getDate()))
-    .replace('HH', pad(date.getHours()))
-    .replace('mm', pad(date.getMinutes()));
-}
-
-/**
- * Get the filename pattern for a type.
- */
-export function getFilenamePattern(
-  schema: LoadedSchema,
-  typeName: string
-): string | undefined {
-  const type: ResolvedType | undefined = getType(schema, typeName);
-  return type?.filename;
-}
-
 // ============================================================================
 // Ownership-Based Path Computation
 // ============================================================================
@@ -373,45 +259,6 @@ export function typeCanBeOwned(schema: LoadedSchema, typeName: string): boolean 
  */
 export function getPossibleOwnerTypes(schema: LoadedSchema, childTypeName: string): OwnerInfo[] {
   return getOwnerTypes(schema, childTypeName);
-}
-
-/**
- * Compute the output directory for an owned note.
- * Owned notes live in: {owner_folder}/{child_type}/
- * 
- * Example: If "My Novel" is a draft at "drafts/My Novel/My Novel.md",
- * and research is owned by draft, then owned research goes to:
- * "drafts/My Novel/research/"
- * 
- * @param ownerPath - Absolute path to the owner note file
- * @param childTypeName - The type name of the owned child (e.g., "research")
- * @returns The absolute path to the directory where owned notes should live
- */
-export function computeOwnedOutputDir(
-  ownerPath: string,
-  childTypeName: string
-): string {
-  // Owner path is like: /vault/drafts/My Novel/My Novel.md
-  // We want: /vault/drafts/My Novel/research/
-  const ownerDir = join(ownerPath, '..'); // Get parent directory of owner note
-  return join(ownerDir, childTypeName);
-}
-
-/**
- * Compute the relative output directory for an owned note (relative to vault).
- * 
- * @param vaultDir - The vault root directory
- * @param ownerPath - Absolute path to the owner note file
- * @param childTypeName - The type name of the owned child
- * @returns Path relative to vault root
- */
-export function computeOwnedOutputDirRelative(
-  vaultDir: string,
-  ownerPath: string,
-  childTypeName: string
-): string {
-  const fullPath = computeOwnedOutputDir(ownerPath, childTypeName);
-  return relative(vaultDir, fullPath);
 }
 
 /**
@@ -499,6 +346,22 @@ async function isNoteOfType(
   } catch {
     return false;
   }
+}
+
+/**
+ * Compute the output directory for an owned note.
+ * Owned notes live in: {owner_folder}/{child_type}/
+ * 
+ * @param ownerPath - Absolute path to the owner note file
+ * @param childTypeName - The type name of the owned child (e.g., "research")
+ * @returns The absolute path to the directory where owned notes should live
+ */
+function computeOwnedOutputDir(
+  ownerPath: string,
+  childTypeName: string
+): string {
+  const ownerDir = join(ownerPath, '..');
+  return join(ownerDir, childTypeName);
 }
 
 /**

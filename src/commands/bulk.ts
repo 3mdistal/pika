@@ -708,5 +708,5 @@ function outputMoveTextResult(result: BulkResult, verbose: boolean, quiet: boole
 // Re-export types for testing
 export type { BulkOperation, BulkResult };
 export { executeBulk } from '../lib/bulk/execute.js';
-export { buildOperation, applyOperations, formatChange, formatValue } from '../lib/bulk/operations.js';
-export { createBackup, listBackups, restoreBackup } from '../lib/bulk/backup.js';
+export { buildOperation, applyOperations, formatChange } from '../lib/bulk/operations.js';
+export { createBackup } from '../lib/bulk/backup.js';

@@ -52,6 +52,9 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Check for dead code (Knip)
+        run: pnpm knip
+
       - name: Run tests (excluding PTY)
         run: pnpm test -- --exclude='**/*.pty.test.ts'
 

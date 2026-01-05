@@ -2,10 +2,9 @@ import { Command } from 'commander';
 import { basename, relative } from 'path';
 import Table from 'cli-table3';
 import {
-  loadSchema,
-  getTypeFamilies,
-  getTypeDefByPath,
   getType,
+  loadSchema,
+  getTypeDefByPath,
 } from '../lib/schema.js';
 import { extractWikilinkTarget } from '../lib/audit/types.js';
 
@@ -290,35 +289,6 @@ interface ListOptions {
   childrenOf?: string | undefined;
   descendantsOf?: string | undefined;
   depth?: number | undefined;
-}
-
-/**
- * Show list command usage.
- */
-function showListUsage(schema: LoadedSchema): void {
-  console.log('Usage: bwrb list [options] [positional]');
-  console.log('');
-  console.log('Targeting Selectors:');
-  console.log('  --type <type>        Filter by type path');
-  console.log('  --path <glob>        Filter by file path glob');
-  console.log('  --where "expr"       Filter with expression (can be repeated)');
-  console.log('  --body <query>       Filter by body content');
-  console.log('');
-  console.log('Other Options:');
-  console.log('  --paths              Show file paths instead of names');
-  console.log('  --fields=f1,f2,...   Show frontmatter fields in a table');
-  console.log('  --output json        Output as JSON');
-  console.log('');
-  console.log('Expression examples:');
-  console.log('  --where "status == \'done\'"');
-  console.log('  --where "priority < 3 && !isEmpty(deadline)"');
-  console.log('  --where "deadline < today() + \'7d\'"');
-  console.log('  --where "contains(tags, \'urgent\')"');
-  console.log('');
-  console.log('Available types:');
-  for (const family of getTypeFamilies(schema)) {
-    console.log(`  ${family}`);
-  }
 }
 
 /**
@@ -723,5 +693,4 @@ function printTree(
   }
 }
 
-// Export showListUsage for potential use elsewhere
-export { showListUsage };
+

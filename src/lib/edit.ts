@@ -292,7 +292,7 @@ export async function editNoteInteractive(
  * - null values remove the field
  * - Arrays are replaced, not merged
  */
-export function mergeFrontmatter(
+function mergeFrontmatter(
   existing: Record<string, unknown>,
   patch: Record<string, unknown>
 ): Record<string, unknown> {

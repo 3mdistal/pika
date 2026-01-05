@@ -41,7 +41,7 @@ export function getTemplateDir(vaultDir: string, typePath: string): string {
 /**
  * Get the root templates directory for a vault.
  */
-export function getTemplatesRoot(vaultDir: string): string {
+function getTemplatesRoot(vaultDir: string): string {
   return join(vaultDir, '.bwrb', 'templates');
 }
 

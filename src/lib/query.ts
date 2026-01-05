@@ -208,7 +208,7 @@ const HIERARCHY_FUNCTIONS = ['isRoot', 'isChildOf', 'isDescendantOf'];
  * Check if any expression uses hierarchy functions.
  * This is used to determine if we need to build hierarchy data before evaluation.
  */
-export function expressionsUseHierarchyFunctions(expressions: string[]): boolean {
+function expressionsUseHierarchyFunctions(expressions: string[]): boolean {
   return expressions.some(expr =>
     HIERARCHY_FUNCTIONS.some(fn => expr.includes(fn + '('))
   );
@@ -218,7 +218,7 @@ export function expressionsUseHierarchyFunctions(expressions: string[]): boolean
  * Build hierarchy data from a set of files for use in expression evaluation.
  * This builds the parent and children maps needed for isRoot, isChildOf, isDescendantOf.
  */
-export function buildHierarchyDataFromFiles(
+function buildHierarchyDataFromFiles(
   files: FileWithFrontmatter[]
 ): HierarchyData {
   const parentMap = new Map<string, string>();

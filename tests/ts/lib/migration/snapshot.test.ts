@@ -5,7 +5,7 @@ import { join } from "path";
 import {
   loadSchemaSnapshot,
   saveSchemaSnapshot,
-  snapshotExists,
+  hasSchemaSnapshot,
 } from "../../../../src/lib/migration/snapshot.js";
 
 describe("snapshot", () => {
@@ -22,9 +22,9 @@ describe("snapshot", () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  describe("snapshotExists", () => {
+  describe("hasSchemaSnapshot", () => {
     it("should return false when no snapshot exists", async () => {
-      const exists = await snapshotExists(tempDir);
+      const exists = await hasSchemaSnapshot(tempDir);
       expect(exists).toBe(false);
     });
 
@@ -39,7 +39,7 @@ describe("snapshot", () => {
         })
       );
 
-      const exists = await snapshotExists(tempDir);
+      const exists = await hasSchemaSnapshot(tempDir);
       expect(exists).toBe(true);
     });
   });
