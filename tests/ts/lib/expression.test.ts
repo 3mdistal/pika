@@ -185,6 +185,175 @@ describe('expression', () => {
     });
   });
 
+  describe('hierarchy functions', () => {
+    // Helper to create context with hierarchy data
+    const makeHierarchyContext = (
+      fileName: string,
+      parentMap: Map<string, string>,
+      childrenMap: Map<string, Set<string>>
+    ): EvalContext => ({
+      frontmatter: {},
+      file: {
+        name: fileName,
+        path: `Tasks/${fileName}.md`,
+        folder: 'Tasks',
+        ext: '.md',
+      },
+      hierarchyData: { parentMap, childrenMap },
+    });
+
+    // Build a simple hierarchy:
+    // Epic (root)
+    //   ├── Feature A
+    //   │     └── Task 1
+    //   └── Feature B
+    //         └── Task 2
+    const parentMap = new Map([
+      ['Feature A', 'Epic'],
+      ['Feature B', 'Epic'],
+      ['Task 1', 'Feature A'],
+      ['Task 2', 'Feature B'],
+    ]);
+
+    const childrenMap = new Map([
+      ['Epic', new Set(['Feature A', 'Feature B'])],
+      ['Feature A', new Set(['Task 1'])],
+      ['Feature B', new Set(['Task 2'])],
+    ]);
+
+    describe('isRoot()', () => {
+      it('should return true for notes with no parent', () => {
+        const ctx = makeHierarchyContext('Epic', parentMap, childrenMap);
+        expect(matchesExpression('isRoot()', ctx)).toBe(true);
+      });
+
+      it('should return false for notes with a parent', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression('isRoot()', ctx)).toBe(false);
+      });
+
+      it('should return false when hierarchyData is missing', () => {
+        const ctx: EvalContext = {
+          frontmatter: {},
+          file: { name: 'Epic', path: 'Epic.md', folder: '', ext: '.md' },
+        };
+        expect(matchesExpression('isRoot()', ctx)).toBe(false);
+      });
+    });
+
+    describe('isChildOf()', () => {
+      it('should return true for direct children', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression("isChildOf('[[Epic]]')", ctx)).toBe(true);
+      });
+
+      it('should return false for non-children', () => {
+        const ctx = makeHierarchyContext('Task 1', parentMap, childrenMap);
+        // Task 1's parent is Feature A, not Epic
+        expect(matchesExpression("isChildOf('[[Epic]]')", ctx)).toBe(false);
+      });
+
+      it('should return false for root notes', () => {
+        const ctx = makeHierarchyContext('Epic', parentMap, childrenMap);
+        expect(matchesExpression("isChildOf('[[Feature A]]')", ctx)).toBe(false);
+      });
+
+      it('should handle plain text argument without wikilink', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression("isChildOf('Epic')", ctx)).toBe(true);
+      });
+
+      it('should return false when hierarchyData is missing', () => {
+        const ctx: EvalContext = {
+          frontmatter: {},
+          file: { name: 'Feature A', path: 'Feature A.md', folder: '', ext: '.md' },
+        };
+        expect(matchesExpression("isChildOf('[[Epic]]')", ctx)).toBe(false);
+      });
+    });
+
+    describe('isDescendantOf()', () => {
+      it('should return true for direct children', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('[[Epic]]')", ctx)).toBe(true);
+      });
+
+      it('should return true for grandchildren', () => {
+        const ctx = makeHierarchyContext('Task 1', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('[[Epic]]')", ctx)).toBe(true);
+      });
+
+      it('should return false for non-descendants', () => {
+        const ctx = makeHierarchyContext('Epic', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('[[Feature A]]')", ctx)).toBe(false);
+      });
+
+      it('should return false for siblings', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('[[Feature B]]')", ctx)).toBe(false);
+      });
+
+      it('should return false for cousins', () => {
+        const ctx = makeHierarchyContext('Task 1', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('[[Feature B]]')", ctx)).toBe(false);
+      });
+
+      it('should handle plain text argument without wikilink', () => {
+        const ctx = makeHierarchyContext('Task 1', parentMap, childrenMap);
+        expect(matchesExpression("isDescendantOf('Epic')", ctx)).toBe(true);
+      });
+
+      it('should return false when hierarchyData is missing', () => {
+        const ctx: EvalContext = {
+          frontmatter: {},
+          file: { name: 'Task 1', path: 'Task 1.md', folder: '', ext: '.md' },
+        };
+        expect(matchesExpression("isDescendantOf('[[Epic]]')", ctx)).toBe(false);
+      });
+
+      it('should handle cyclic parent references without infinite loop', () => {
+        // Create a cycle: A -> B -> C -> A
+        const cyclicParentMap = new Map([
+          ['Note A', 'Note C'],
+          ['Note B', 'Note A'],
+          ['Note C', 'Note B'],
+        ]);
+        const cyclicChildrenMap = new Map([
+          ['Note A', new Set(['Note B'])],
+          ['Note B', new Set(['Note C'])],
+          ['Note C', new Set(['Note A'])],
+        ]);
+        const ctx = makeHierarchyContext('Note A', cyclicParentMap, cyclicChildrenMap);
+        // Should return false (not find 'NonExistent') without hanging
+        expect(matchesExpression("isDescendantOf('[[NonExistent]]')", ctx)).toBe(false);
+      });
+    });
+
+    describe('hierarchy functions composability', () => {
+      it('should combine with other expressions using AND', () => {
+        const ctx: EvalContext = {
+          ...makeHierarchyContext('Task 1', parentMap, childrenMap),
+          frontmatter: { status: 'done' },
+        };
+        expect(matchesExpression("isDescendantOf('[[Epic]]') && status == 'done'", ctx)).toBe(true);
+        expect(matchesExpression("isDescendantOf('[[Epic]]') && status == 'pending'", ctx)).toBe(false);
+      });
+
+      it('should combine with other expressions using OR', () => {
+        const ctx = {
+          ...makeHierarchyContext('Epic', parentMap, childrenMap),
+          frontmatter: { status: 'done' },
+        };
+        expect(matchesExpression("isRoot() || status == 'pending'", ctx)).toBe(true);
+      });
+
+      it('should work with NOT', () => {
+        const ctx = makeHierarchyContext('Feature A', parentMap, childrenMap);
+        expect(matchesExpression('!isRoot()', ctx)).toBe(true);
+      });
+    });
+  });
+
   describe('buildEvalContext', () => {
     let vaultDir: string;
     let testFilePath: string;

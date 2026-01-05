@@ -13,6 +13,17 @@ jsep.addBinaryOp('>=', 7);
 jsep.addUnaryOp('!');
 
 /**
+ * Hierarchy data for hierarchy-aware expression functions.
+ * Built once per query and passed through context.
+ */
+export interface HierarchyData {
+  /** Map from note name to parent note name */
+  parentMap: Map<string, string>;
+  /** Map from note name to set of child note names */
+  childrenMap: Map<string, Set<string>>;
+}
+
+/**
  * Context for expression evaluation.
  */
 export interface EvalContext {
@@ -26,6 +37,8 @@ export interface EvalContext {
     ctime?: Date;
     mtime?: Date;
   };
+  /** Optional hierarchy data for hierarchy functions (isRoot, isChildOf, isDescendantOf) */
+  hierarchyData?: HierarchyData;
 }
 
 /**
@@ -310,7 +323,63 @@ const FUNCTIONS: Record<string, FunctionImpl> = {
     }
     return false;
   },
+
+  // Hierarchy functions (require hierarchyData in context)
+  /**
+   * Check if the current note is a root (has no parent).
+   * Returns false if hierarchyData is not available.
+   */
+  isRoot: (_args, context) => {
+    const noteName = context.file?.name;
+    if (!noteName || !context.hierarchyData) return false;
+    return !context.hierarchyData.parentMap.has(noteName);
+  },
+
+  /**
+   * Check if the current note is a direct child of the specified note.
+   * Accepts wikilink format: isChildOf('[[Parent Note]]') or plain: isChildOf('Parent Note')
+   */
+  isChildOf: (args, context) => {
+    const targetParent = extractNoteNameFromArg(String(args[0] ?? ''));
+    const noteName = context.file?.name;
+    if (!noteName || !targetParent || !context.hierarchyData) return false;
+    return context.hierarchyData.parentMap.get(noteName) === targetParent;
+  },
+
+  /**
+   * Check if the current note is a descendant (at any depth) of the specified note.
+   * Accepts wikilink format: isDescendantOf('[[Ancestor]]') or plain: isDescendantOf('Ancestor')
+   */
+  isDescendantOf: (args, context) => {
+    const targetAncestor = extractNoteNameFromArg(String(args[0] ?? ''));
+    const noteName = context.file?.name;
+    if (!noteName || !targetAncestor || !context.hierarchyData) return false;
+
+    // Walk up the parent chain checking for the target ancestor
+    // Use a visited set to prevent infinite loops on cyclic parent references
+    const visited = new Set<string>();
+    let current = context.hierarchyData.parentMap.get(noteName);
+    while (current && !visited.has(current)) {
+      if (current === targetAncestor) return true;
+      visited.add(current);
+      current = context.hierarchyData.parentMap.get(current);
+    }
+    return false;
+  },
 };
+
+/**
+ * Extract a note name from an argument that may be in wikilink format.
+ * Handles: '[[Note Name]]', "[[Note Name]]", '[[Note Name]]', or plain 'Note Name'
+ */
+function extractNoteNameFromArg(value: string): string | null {
+  if (!value) return null;
+  // Match wikilink format: [[Note Name]]
+  const match = value.match(/\[\[([^\]]+)\]\]/);
+  if (match) return match[1] ?? null;
+  // Plain note name
+  return value.trim() || null;
+}
 
 // ============================================================================
 // Type coercion and comparison

@@ -439,5 +439,111 @@ status: raw
       expect(result.stdout).toContain('Standalone Task');
       // Both roots have status: raw, so both should appear
     });
+
+    describe('--where hierarchy functions', () => {
+      it('should filter with isRoot() in --where expression', async () => {
+        const result = await runCLI(['list', 'task', '--where', 'isRoot()'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Parent Task');
+        expect(result.stdout).toContain('Standalone Task');
+        expect(result.stdout).not.toContain('Child Task');
+        expect(result.stdout).not.toContain('Grandchild');
+      });
+
+      it('should filter with isChildOf() in --where expression', async () => {
+        const result = await runCLI(['list', 'task', '--where', "isChildOf('[[Parent Task]]')"], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Child Task 1');
+        expect(result.stdout).toContain('Child Task 2');
+        expect(result.stdout).not.toContain('Parent Task');
+        expect(result.stdout).not.toContain('Grandchild');
+        expect(result.stdout).not.toContain('Standalone');
+      });
+
+      it('should filter with isDescendantOf() in --where expression', async () => {
+        const result = await runCLI(['list', 'task', '--where', "isDescendantOf('[[Parent Task]]')"], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Child Task 1');
+        expect(result.stdout).toContain('Child Task 2');
+        expect(result.stdout).toContain('Grandchild Task');
+        expect(result.stdout).not.toContain('Parent Task');
+        expect(result.stdout).not.toContain('Standalone');
+      });
+
+      it('should combine hierarchy functions with other --where expressions', async () => {
+        const result = await runCLI(
+          ['list', 'task', '--where', "isDescendantOf('[[Parent Task]]')", '--where', "status == 'done'"],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Grandchild Task');
+        expect(result.stdout).not.toContain('Child Task 1');
+        expect(result.stdout).not.toContain('Child Task 2');
+      });
+
+      it('should combine isRoot() with status filter in single expression', async () => {
+        const result = await runCLI(
+          ['list', 'task', '--where', "isRoot() && status == 'raw'"],
+          tempVaultDir
+        );
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Parent Task');
+        expect(result.stdout).toContain('Standalone Task');
+      });
+
+      it('should work with negated hierarchy functions', async () => {
+        const result = await runCLI(['list', 'task', '--where', '!isRoot()'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Child Task 1');
+        expect(result.stdout).toContain('Child Task 2');
+        expect(result.stdout).toContain('Grandchild Task');
+        expect(result.stdout).not.toContain('Parent Task');
+        expect(result.stdout).not.toContain('Standalone Task');
+      });
+    });
+
+    describe('deprecated hierarchy flags', () => {
+      it('should show deprecation warning for --roots', async () => {
+        const result = await runCLI(['list', 'task', '--roots'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toContain('Warning:');
+        expect(result.stderr).toContain('--roots');
+        expect(result.stderr).toContain('isRoot()');
+      });
+
+      it('should show deprecation warning for --children-of', async () => {
+        const result = await runCLI(['list', 'task', '--children-of', '[[Parent Task]]'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toContain('Warning:');
+        expect(result.stderr).toContain('--children-of');
+        expect(result.stderr).toContain('isChildOf');
+      });
+
+      it('should show deprecation warning for --descendants-of', async () => {
+        const result = await runCLI(['list', 'task', '--descendants-of', '[[Parent Task]]'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toContain('Warning:');
+        expect(result.stderr).toContain('--descendants-of');
+        expect(result.stderr).toContain('isDescendantOf');
+      });
+
+      it('should accept -L as alias for --depth', async () => {
+        const result = await runCLI(['list', 'task', '--descendants-of', '[[Parent Task]]', '-L', '1'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Child Task 1');
+        expect(result.stdout).toContain('Child Task 2');
+        expect(result.stdout).not.toContain('Grandchild');
+      });
+    });
   });
 });

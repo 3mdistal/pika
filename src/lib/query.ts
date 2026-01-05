@@ -1,7 +1,9 @@
+import { basename } from 'path';
 import type { LoadedSchema } from '../types/schema.js';
 import { getAllFieldsForType, getEnumForField, getEnumValues } from './schema.js';
-import { matchesExpression, buildEvalContext } from './expression.js';
+import { matchesExpression, buildEvalContext, type HierarchyData } from './expression.js';
 import { printError } from './prompt.js';
+import { extractWikilinkTarget } from './audit/types.js';
 
 export interface Filter {
   field: string;
@@ -195,6 +197,55 @@ export interface FrontmatterFilterOptions {
   silent?: boolean;
 }
 
+// ============================================================================
+// Hierarchy Function Support
+// ============================================================================
+
+/** Names of functions that require hierarchy data */
+const HIERARCHY_FUNCTIONS = ['isRoot', 'isChildOf', 'isDescendantOf'];
+
+/**
+ * Check if any expression uses hierarchy functions.
+ * This is used to determine if we need to build hierarchy data before evaluation.
+ */
+export function expressionsUseHierarchyFunctions(expressions: string[]): boolean {
+  return expressions.some(expr =>
+    HIERARCHY_FUNCTIONS.some(fn => expr.includes(fn + '('))
+  );
+}
+
+/**
+ * Build hierarchy data from a set of files for use in expression evaluation.
+ * This builds the parent and children maps needed for isRoot, isChildOf, isDescendantOf.
+ */
+export function buildHierarchyDataFromFiles(
+  files: FileWithFrontmatter[]
+): HierarchyData {
+  const parentMap = new Map<string, string>();
+  const childrenMap = new Map<string, Set<string>>();
+
+  for (const file of files) {
+    const noteName = basename(file.path, '.md');
+    const parentValue = file.frontmatter['parent'];
+
+    if (parentValue) {
+      const parentTarget = extractWikilinkTarget(String(parentValue));
+      if (parentTarget) {
+        // Set parent relationship
+        parentMap.set(noteName, parentTarget);
+
+        // Build reverse children relationship
+        if (!childrenMap.has(parentTarget)) {
+          childrenMap.set(parentTarget, new Set());
+        }
+        childrenMap.get(parentTarget)!.add(noteName);
+      }
+    }
+  }
+
+  return { parentMap, childrenMap };
+}
+
 /**
  * A file with its parsed frontmatter.
  */
@@ -220,6 +271,13 @@ export async function applyFrontmatterFilters<T extends FileWithFrontmatter>(
   const { filters, whereExpressions, vaultDir, silent = false } = options;
   const result: T[] = [];
 
+  // Build hierarchy data if any expression uses hierarchy functions
+  // This is done once before the loop for efficiency
+  let hierarchyData: HierarchyData | undefined;
+  if (whereExpressions.length > 0 && expressionsUseHierarchyFunctions(whereExpressions)) {
+    hierarchyData = buildHierarchyDataFromFiles(files);
+  }
+
   for (const file of files) {
     // Apply simple filters first (--field=value style)
     if (!matchesAllFilters(file.frontmatter, filters)) {
@@ -229,6 +287,10 @@ export async function applyFrontmatterFilters<T extends FileWithFrontmatter>(
     // Apply expression filters (--where style)
     if (whereExpressions.length > 0) {
       const context = await buildEvalContext(file.path, vaultDir, file.frontmatter);
+      // Add hierarchy data to context if available
+      if (hierarchyData) {
+        context.hierarchyData = hierarchyData;
+      }
       const allMatch = whereExpressions.every(expr => {
         try {
           return matchesExpression(expr, context);

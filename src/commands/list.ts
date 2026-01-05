@@ -133,12 +133,12 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
   // Open options
   .option('--open', 'Open the first result (or pick from results interactively)')
   .option('--app <mode>', 'How to open: obsidian (default), editor, system, print')
-  // Hierarchy options for recursive types
-  .option('--roots', 'Only show notes with no parent (root nodes)')
-  .option('--children-of <note>', 'Only show direct children of the specified note (wikilink format)')
-  .option('--descendants-of <note>', 'Only show all descendants of the specified note')
+  // Hierarchy options for recursive types (deprecated in favor of --where functions)
+  .option('--roots', 'Only show root notes (deprecated: use --where "isRoot()")')
+  .option('--children-of <note>', 'Only show direct children (deprecated: use --where "isChildOf(\'[[Note]]\')")')
+  .option('--descendants-of <note>', 'Only show descendants (deprecated: use --where "isDescendantOf(\'[[Note]]\')")')
   .option('--tree', 'Display as tree (deprecated: use --output tree)')
-  .option('--depth <n>', 'Limit tree/descendants depth (use with --tree or --descendants-of)')
+  .option('-L, --depth <n>', 'Limit tree/descendants depth')
   .allowUnknownOption(true)
   .action(async (positional: string | undefined, options: ListCommandOptions, cmd: Command) => {
     // Resolve output format from --output flag and deprecated flags
@@ -238,6 +238,19 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
 
       const fields = options.fields?.split(',').map(f => f.trim());
       const depth = options.depth ? parseInt(options.depth, 10) : undefined;
+
+      // Emit deprecation warnings for hierarchy flags (unless in JSON mode)
+      if (!jsonMode) {
+        if (options.roots) {
+          warnDeprecated('--roots', '--where "isRoot()"');
+        }
+        if (options.childrenOf) {
+          warnDeprecated('--children-of', `--where "isChildOf('[[${extractNoteName(options.childrenOf) ?? options.childrenOf}]]')"`);
+        }
+        if (options.descendantsOf) {
+          warnDeprecated('--descendants-of', `--where "isDescendantOf('[[${extractNoteName(options.descendantsOf) ?? options.descendantsOf}]]')"`);
+        }
+      }
       
       await listObjects(schema, vaultDir, targeting.type, targetResult.files, {
         outputFormat,

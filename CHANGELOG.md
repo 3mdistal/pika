@@ -6,12 +6,27 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Added
 
+- **Hierarchy functions for `--where` expressions** (#121)
+  - `isRoot()` - Match notes with no parent
+  - `isChildOf('[[Note]]')` - Match direct children of specified note
+  - `isDescendantOf('[[Note]]')` - Match all descendants of specified note
+  - Example: `bwrb list --type task --where "isDescendantOf('[[Epic]]') && status != 'done'"`
+  - Functions work with recursive types and respect `--depth`/`-L` flag
+
+- **`-L` alias for `--depth` flag** (#121)
+  - Shorthand for depth limiting: `bwrb list --type task -L 2`
+
 - **`--type`/`-t` flag for `new` command** (#120)
   - Explicit type selection: `bwrb new --type task` or `bwrb new -t task`
   - Positional argument still works: `bwrb new task`
   - Flag takes precedence if both provided
 
 ### Removed
+
+- **Hierarchy flags on `list` command** (#121)
+  - `--roots`, `--children-of`, `--descendants-of` now emit deprecation warnings
+  - Use `--where "isRoot()"`, `--where "isChildOf('[[Note]]')"`, `--where "isDescendantOf('[[Note]]')"` instead
+  - Old flags continue to work but will be removed in a future release
 
 - **Deprecated flags from `new` command** (#120)
   - `--default` flag removed - use `--template default` instead
