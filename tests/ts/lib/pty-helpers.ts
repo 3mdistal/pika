@@ -369,40 +369,6 @@ export function spawnBowerbird(
 export const spawnOvault = spawnBowerbird;
 
 /**
- * Spawn a generic command in a PTY.
- *
- * @param command The command to run
- * @param args Command arguments
- * @param options Spawn options
- */
-export function spawnCommand(
-  command: string,
-  args: string[],
-  options: SpawnOptions = {}
-): PtyProcess {
-  const {
-    cwd = PROJECT_ROOT,
-    env = {},
-    cols = 80,
-    rows = 24,
-  } = options;
-
-  const ptyProcess = pty.spawn(command, args, {
-    name: 'xterm-256color',
-    cols,
-    rows,
-    cwd,
-    env: {
-      ...process.env,
-      FORCE_COLOR: '1',
-      ...env,
-    },
-  });
-
-  return new PtyProcess(ptyProcess);
-}
-
-/**
  * Helper to run a quick PTY test with automatic cleanup.
  *
  * @param args bwrb arguments
@@ -690,7 +656,7 @@ export async function withTempVault(
  * @param vaultDir Absolute path to vault
  * @returns Relative path from PROJECT_ROOT
  */
-export function getRelativePath(vaultDir: string): string {
+function getRelativePath(vaultDir: string): string {
   return path.relative(PROJECT_ROOT, vaultDir);
 }
 
@@ -746,7 +712,7 @@ export async function withTempVaultRelative(
  * Caches the result after first call.
  */
 let _ptyWorks: boolean | null = null;
-export function canUsePty(): boolean {
+function canUsePty(): boolean {
   if (_ptyWorks !== null) return _ptyWorks;
   
   try {

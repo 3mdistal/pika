@@ -7,5 +7,39 @@
   // Vitest plugin doesn't auto-detect globalTeardown from config
   "vitest": {
     "entry": ["tests/ts/teardown.ts"]
+  },
+
+  // Ignore intentional public API exports
+  "ignore": [
+    // Zod schemas are exported for external validation/type inference
+    "src/types/migration.ts",
+    "src/types/schema.ts",
+    // Test helpers export public API for test files
+    "tests/ts/lib/pty-helpers.ts",
+    // Migration utilities are public API for migration commands
+    "src/lib/migration/*.ts"
+  ],
+
+  // Ignore specific issue types in files with intentional re-exports
+  "ignoreIssues": {
+    // Command files re-export internal functions for testing
+    "src/commands/audit.ts": ["exports"],
+    "src/commands/bulk.ts": ["exports"],
+    // Audit types include interfaces for callers
+    "src/lib/audit/types.ts": ["types"],
+    // Bulk types include interfaces for backup operations
+    "src/lib/bulk/types.ts": ["types"]
+  },
+
+  // Ignore specific exports that are intentional public API for testing/external use
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true
+  },
+
+  // Ignore specific exports that are intentional public API
+  "rules": {
+    // Allow duplicate exports (legacy aliases for backward compatibility)
+    "duplicates": "off"
   }
 }

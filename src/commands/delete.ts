@@ -492,14 +492,4 @@ async function handleBulkDelete(
   }
 }
 
-// ============================================================================
-// Exported Helper (for potential use by other commands)
-// ============================================================================
 
-/**
- * Delete a note file directly (used by other commands if needed).
- * Does not check for confirmation - caller is responsible for that.
- */
-export async function deleteNoteFile(filePath: string): Promise<void> {
-  await unlink(filePath);
-}

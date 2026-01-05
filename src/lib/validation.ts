@@ -6,7 +6,7 @@ import { extractWikilinkTarget } from './audit/types.js';
 /**
  * Validation error types.
  */
-export type ValidationErrorType =
+type ValidationErrorType =
   | 'required_field_missing'
   | 'invalid_enum_value'
   | 'invalid_type'
@@ -399,32 +399,6 @@ export function formatValidationErrors(errors: ValidationError[]): string {
   }
 
   return lines.join('\n');
-}
-
-/**
- * Convert validation result to JSON-friendly format.
- */
-export function validationResultToJson(
-  result: ValidationResult
-): Record<string, unknown> {
-  return {
-    success: result.valid,
-    errors: result.errors.map(e => ({
-      field: e.field,
-      value: e.value,
-      message: e.message,
-      expected: e.expected,
-      suggestion: e.suggestion,
-    })),
-    warnings: result.warnings.length > 0 
-      ? result.warnings.map(w => ({
-          field: w.field,
-          value: w.value,
-          message: w.message,
-          suggestion: w.suggestion,
-        }))
-      : undefined,
-  };
 }
 
 /**

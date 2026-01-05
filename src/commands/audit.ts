@@ -24,9 +24,7 @@ import {
 // Import from audit modules
 import {
   type AuditIssue,
-  type FileAuditResult,
   type AuditSummary,
-  type FixSummary,
   type ManagedFile,
   type AuditRunOptions,
   type IssueCode,
@@ -37,9 +35,6 @@ import {
   discoverManagedFiles,
   auditFile,
 } from '../lib/audit/detection.js';
-import {
-  collectPooledFiles,
-} from '../lib/discovery.js';
 import {
   runAutoFix,
   runInteractiveFix,
@@ -245,9 +240,7 @@ Examples:
 export {
   // Types
   type AuditIssue,
-  type FileAuditResult,
   type AuditSummary,
-  type FixSummary,
   type ManagedFile,
   type AuditRunOptions,
   type IssueCode,
@@ -256,7 +249,6 @@ export {
   runAudit,
   discoverManagedFiles,
   auditFile,
-  collectPooledFiles,
   
   // Fix functions
   runAutoFix,

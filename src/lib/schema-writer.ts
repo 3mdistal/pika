@@ -42,10 +42,4 @@ export async function writeSchema(vaultDir: string, schema: Schema): Promise<voi
   await rename(tempPath, schemaPath);
 }
 
-/**
- * Validate that a schema is valid without writing it.
- * Throws if invalid.
- */
-export function validateSchema(schema: unknown): Schema {
-  return BwrbSchema.parse(schema);
-}
+

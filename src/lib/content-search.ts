@@ -376,7 +376,7 @@ export async function searchContent(
 /**
  * Format a single match for text output.
  */
-export function formatMatchText(
+function formatMatchText(
   relativePath: string,
   match: LineMatch,
   showContext: boolean

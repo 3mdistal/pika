@@ -3703,7 +3703,7 @@ schemaCommand.addCommand(listCommand);
 // ============================================================================
 
 import { diffSchemas, formatDiffForDisplay, formatDiffForJson } from '../lib/migration/diff.js';
-import { loadSchemaSnapshot, saveSchemaSnapshot, snapshotExists } from '../lib/migration/snapshot.js';
+import { loadSchemaSnapshot, saveSchemaSnapshot, hasSchemaSnapshot } from '../lib/migration/snapshot.js';
 import { loadMigrationHistory, recordMigration } from '../lib/migration/history.js';
 import { executeMigration } from '../lib/migration/execute.js';
 import type { MigrationPlan } from '../types/migration.js';
@@ -3743,7 +3743,7 @@ Examples:
       const currentSchema = await loadSchema(vaultDir);
       
       // Check if snapshot exists
-      if (!await snapshotExists(vaultDir)) {
+      if (!await hasSchemaSnapshot(vaultDir)) {
         if (jsonMode) {
           printJson(jsonSuccess({
             message: 'No previous schema snapshot found. Run `bwrb schema migrate --execute` to create initial snapshot.',
@@ -3828,7 +3828,7 @@ Examples:
       let diff: MigrationPlan;
       let isInitialSnapshot = false;
       
-      if (!await snapshotExists(vaultDir)) {
+      if (!await hasSchemaSnapshot(vaultDir)) {
         isInitialSnapshot = true;
         // Create empty diff for initial snapshot
         diff = {

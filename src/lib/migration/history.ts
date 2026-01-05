@@ -83,13 +83,4 @@ export async function getLatestMigration(
   return history.applied.at(-1);
 }
 
-/**
- * Get the version from the last applied migration.
- * Returns undefined if no migrations have been applied.
- */
-export async function getLastAppliedVersion(
-  vaultPath: string
-): Promise<string | undefined> {
-  const latest = await getLatestMigration(vaultPath);
-  return latest?.version;
-}
+

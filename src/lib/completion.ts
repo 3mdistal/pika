@@ -168,13 +168,6 @@ export async function getPathCompletions(
 // ============================================================================
 
 /**
- * Commands that support targeting options (--type, --path, --where, --text).
- */
-const TARGETING_COMMANDS = new Set([
-  'list', 'bulk', 'audit', 'search', 'open', 'delete'
-]);
-
-/**
  * All available bwrb commands.
  */
 const COMMANDS = [
@@ -226,22 +219,15 @@ export function getOptionCompletions(command: string): string[] {
 /**
  * Check if an option expects a type value.
  */
-export function isTypeOption(option: string): boolean {
+function isTypeOption(option: string): boolean {
   return option === '--type' || option === '-t';
 }
 
 /**
  * Check if an option expects a path value.
  */
-export function isPathOption(option: string): boolean {
+function isPathOption(option: string): boolean {
   return option === '--path' || option === '-p';
-}
-
-/**
- * Check if a command supports targeting options.
- */
-export function supportsTargeting(command: string): boolean {
-  return TARGETING_COMMANDS.has(command);
 }
 
 // ============================================================================
@@ -318,7 +304,7 @@ export async function handleCompletionRequest(
 /**
  * Generate bash completion script.
  */
-export function generateBashScript(): string {
+function generateBashScript(): string {
   return `# bwrb bash completion
 # Add to ~/.bashrc: eval "$(bwrb completion bash)"
 
@@ -346,7 +332,7 @@ complete -F _bwrb_completions bwrb
 /**
  * Generate zsh completion script.
  */
-export function generateZshScript(): string {
+function generateZshScript(): string {
   return `#compdef bwrb
 # bwrb zsh completion
 # Add to ~/.zshrc: eval "$(bwrb completion zsh)"
@@ -375,7 +361,7 @@ compdef _bwrb bwrb
 /**
  * Generate fish completion script.
  */
-export function generateFishScript(): string {
+function generateFishScript(): string {
   return `# bwrb fish completion
 # Save to ~/.config/fish/completions/bwrb.fish
 
