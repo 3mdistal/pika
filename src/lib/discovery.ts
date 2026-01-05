@@ -16,6 +16,8 @@ import {
   getOwnedFields,
   canTypeBeOwned,
   resolveTypeFromFrontmatter,
+  getConcreteTypeNames,
+  getTypeFamilies,
 } from './schema.js';
 import { parseNote } from './frontmatter.js';
 import type { LoadedSchema, OwnedFieldInfo } from '../types/schema.js';
@@ -227,6 +229,118 @@ export async function discoverManagedFiles(
   const excluded = getExcludedDirectories(schema);
   const gitignore = await loadGitignore(vaultDir);
   return collectAllMarkdownFiles(vaultDir, vaultDir, excluded, gitignore);
+}
+
+// ============================================================================
+// Type-Aware Discovery (for navigation/search)
+// ============================================================================
+
+/**
+ * Get the output directories for all concrete types.
+ * Returns a Set of relative paths (e.g., "Objectives/Tasks").
+ */
+export function getTypeOutputDirs(schema: LoadedSchema): Set<string> {
+  const dirs = new Set<string>();
+  const typeNames = getConcreteTypeNames(schema);
+  
+  for (const typeName of typeNames) {
+    const outputDir = getOutputDirFromSchema(schema, typeName);
+    if (outputDir) {
+      // Normalize: remove trailing slash if present
+      dirs.add(outputDir.replace(/\/$/, ''));
+    }
+  }
+  
+  return dirs;
+}
+
+/**
+ * Check if a file path is within any type's output directory.
+ * Handles nested directories correctly (e.g., "Objectives/Tasks/foo.md" is in "Objectives/Tasks").
+ */
+export function isInTypeOutputDir(relativePath: string, typeOutputDirs: Set<string>): boolean {
+  for (const dir of typeOutputDirs) {
+    // Check if the file is directly in the directory or in a subdirectory
+    if (relativePath.startsWith(dir + '/')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Discover all files from all types in the schema.
+ * This ignores exclusion rules since type directories are explicitly defined.
+ * 
+ * Used by navigation/search to ensure typed files are always discoverable,
+ * regardless of whether they're in ignored directories.
+ */
+export async function discoverAllTypeFiles(
+  schema: LoadedSchema,
+  vaultDir: string
+): Promise<ManagedFile[]> {
+  const allFiles = new Map<string, ManagedFile>(); // dedupe by path
+  
+  // Get root types (direct children of meta) to avoid duplicate collection
+  // since collectFilesForType already includes descendants
+  const rootTypes = getTypeFamilies(schema);
+  
+  for (const typeName of rootTypes) {
+    const typeFiles = await collectFilesForType(schema, vaultDir, typeName);
+    for (const file of typeFiles) {
+      if (!allFiles.has(file.relativePath)) {
+        allFiles.set(file.relativePath, file);
+      }
+    }
+  }
+  
+  return Array.from(allFiles.values());
+}
+
+/**
+ * Discover unmanaged files (markdown files not in any type's output directory).
+ * These files respect exclusion rules since they're outside the schema's purview.
+ * 
+ * Used by navigation/search to support migration workflows and vault-wide discovery.
+ */
+export async function discoverUnmanagedFiles(
+  schema: LoadedSchema,
+  vaultDir: string
+): Promise<ManagedFile[]> {
+  const excluded = getExcludedDirectories(schema);
+  const gitignore = await loadGitignore(vaultDir);
+  const typeOutputDirs = getTypeOutputDirs(schema);
+  
+  // Vault-wide scan with exclusions
+  const allFiles = await collectAllMarkdownFiles(vaultDir, vaultDir, excluded, gitignore);
+  
+  // Filter to only files NOT in type output directories
+  return allFiles.filter(f => !isInTypeOutputDir(f.relativePath, typeOutputDirs));
+}
+
+/**
+ * Discover all files for navigation/search using hybrid approach.
+ * 
+ * Combines:
+ * - Type files: Always included (ignores exclusion rules)
+ * - Unmanaged files: Respects exclusion rules
+ * 
+ * This ensures typed files are always discoverable via search/open/edit,
+ * matching the behavior of `list --type`, while still supporting
+ * unmanaged files for migration workflows.
+ */
+export async function discoverFilesForNavigation(
+  schema: LoadedSchema,
+  vaultDir: string
+): Promise<ManagedFile[]> {
+  // Get all typed files (ignores exclusion rules)
+  const typeFiles = await discoverAllTypeFiles(schema, vaultDir);
+  
+  // Get unmanaged files (respects exclusion rules)
+  const unmanagedFiles = await discoverUnmanagedFiles(schema, vaultDir);
+  
+  // Combine and return
+  return [...typeFiles, ...unmanagedFiles];
 }
 
 /**

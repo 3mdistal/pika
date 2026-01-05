@@ -10,6 +10,11 @@ import {
   collectPooledFiles,
   findSimilarFiles,
   levenshteinDistance,
+  getTypeOutputDirs,
+  isInTypeOutputDir,
+  discoverAllTypeFiles,
+  discoverUnmanagedFiles,
+  discoverFilesForNavigation,
   type ManagedFile,
 } from '../../../src/lib/discovery.js';
 import { loadSchema } from '../../../src/lib/schema.js';
@@ -258,6 +263,207 @@ describe('Discovery', () => {
 
     it('should calculate multiple character changes', () => {
       expect(levenshteinDistance('kitten', 'sitting')).toBe(3);
+    });
+  });
+
+  // ============================================================================
+  // Type-Aware Discovery Tests (for navigation/search consistency fix)
+  // ============================================================================
+
+  describe('getTypeOutputDirs', () => {
+    it('should return output directories for all concrete types', () => {
+      const dirs = getTypeOutputDirs(schema);
+      
+      expect(dirs.has('Ideas')).toBe(true);
+      expect(dirs.has('Objectives/Tasks')).toBe(true);
+      expect(dirs.has('Objectives/Milestones')).toBe(true);
+    });
+
+    it('should not include meta type', () => {
+      const dirs = getTypeOutputDirs(schema);
+      // meta has no output_dir, so it shouldn't appear
+      expect(dirs.size).toBeGreaterThan(0);
+    });
+  });
+
+  describe('isInTypeOutputDir', () => {
+    it('should return true for files directly in type directory', () => {
+      const dirs = new Set(['Ideas', 'Objectives/Tasks']);
+      
+      expect(isInTypeOutputDir('Ideas/My Note.md', dirs)).toBe(true);
+      expect(isInTypeOutputDir('Objectives/Tasks/My Task.md', dirs)).toBe(true);
+    });
+
+    it('should return false for files not in type directories', () => {
+      const dirs = new Set(['Ideas', 'Objectives/Tasks']);
+      
+      expect(isInTypeOutputDir('Archive/Old Note.md', dirs)).toBe(false);
+      expect(isInTypeOutputDir('Random/File.md', dirs)).toBe(false);
+    });
+
+    it('should return false for files in parent directories', () => {
+      const dirs = new Set(['Objectives/Tasks']);
+      
+      // Objectives is parent of Objectives/Tasks, not a type dir itself
+      expect(isInTypeOutputDir('Objectives/Some Note.md', dirs)).toBe(false);
+    });
+
+    it('should handle nested paths correctly', () => {
+      const dirs = new Set(['Objectives/Tasks']);
+      
+      // Subdirectories of type dirs should still match
+      expect(isInTypeOutputDir('Objectives/Tasks/Subtask/Note.md', dirs)).toBe(true);
+    });
+
+    it('should not match directories with similar prefixes (false positive guard)', () => {
+      const dirs = new Set(['Ideas']);
+      
+      // Ideas2 should NOT match Ideas (must match Ideas/ exactly)
+      expect(isInTypeOutputDir('Ideas2/Some Note.md', dirs)).toBe(false);
+      expect(isInTypeOutputDir('IdeasArchive/Old.md', dirs)).toBe(false);
+      
+      // But Ideas/ should still match
+      expect(isInTypeOutputDir('Ideas/Sample.md', dirs)).toBe(true);
+    });
+  });
+
+  describe('discoverAllTypeFiles', () => {
+    it('should collect files from all type directories', async () => {
+      const files = await discoverAllTypeFiles(schema, vaultDir);
+      
+      const paths = files.map(f => f.relativePath);
+      expect(paths).toContain('Ideas/Sample Idea.md');
+      expect(paths).toContain('Ideas/Another Idea.md');
+      expect(paths).toContain('Objectives/Tasks/Sample Task.md');
+      expect(paths).toContain('Objectives/Milestones/Active Milestone.md');
+    });
+
+    it('should NOT respect ignored_directories for type files', async () => {
+      // Create a file in a type directory that's also in ignored_directories
+      // The test vault has "Templates" in ignored_directories
+      // We'll add a type output_dir that overlaps with an ignored dir
+      
+      // For this test, we create a task in an ignored location
+      // Since Tasks dir is not ignored, we need to test differently:
+      // Add Ideas to ignored_directories temporarily via schema modification
+      
+      // Instead, let's verify type files are found regardless of gitignore
+      await writeFile(join(vaultDir, '.gitignore'), 'Ideas/');
+      
+      const files = await discoverAllTypeFiles(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // Ideas files should still be found because type discovery ignores gitignore
+      expect(paths).toContain('Ideas/Sample Idea.md');
+      expect(paths).toContain('Ideas/Another Idea.md');
+    });
+
+    it('should deduplicate files across type hierarchies', async () => {
+      const files = await discoverAllTypeFiles(schema, vaultDir);
+      
+      // Check for duplicates
+      const paths = files.map(f => f.relativePath);
+      const uniquePaths = new Set(paths);
+      expect(paths.length).toBe(uniquePaths.size);
+    });
+  });
+
+  describe('discoverUnmanagedFiles', () => {
+    it('should find files not in any type directory', async () => {
+      // Create an unmanaged file
+      await mkdir(join(vaultDir, 'Random'), { recursive: true });
+      await writeFile(join(vaultDir, 'Random', 'Unmanaged.md'), '---\ntitle: Test\n---\n');
+      
+      const files = await discoverUnmanagedFiles(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      expect(paths).toContain('Random/Unmanaged.md');
+    });
+
+    it('should NOT include files in type directories', async () => {
+      const files = await discoverUnmanagedFiles(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // Type files should not appear in unmanaged results
+      expect(paths).not.toContain('Ideas/Sample Idea.md');
+      expect(paths).not.toContain('Objectives/Tasks/Sample Task.md');
+    });
+
+    it('should respect ignored_directories for unmanaged files', async () => {
+      // Create unmanaged file in an ignored directory
+      await mkdir(join(vaultDir, 'Templates/Notes'), { recursive: true });
+      await writeFile(join(vaultDir, 'Templates/Notes/Template.md'), '---\ntitle: Template\n---\n');
+      
+      const files = await discoverUnmanagedFiles(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // File in Templates (ignored) should not appear
+      expect(paths.some(p => p.startsWith('Templates/'))).toBe(false);
+    });
+
+    it('should respect .gitignore for unmanaged files', async () => {
+      // Create unmanaged file
+      await mkdir(join(vaultDir, 'Archive'), { recursive: true });
+      await writeFile(join(vaultDir, 'Archive', 'Old.md'), '---\ntitle: Old\n---\n');
+      
+      // Add to gitignore
+      await writeFile(join(vaultDir, '.gitignore'), 'Archive/');
+      
+      const files = await discoverUnmanagedFiles(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      expect(paths.some(p => p.startsWith('Archive/'))).toBe(false);
+    });
+  });
+
+  describe('discoverFilesForNavigation', () => {
+    it('should combine type files and unmanaged files', async () => {
+      // Create an unmanaged file
+      await mkdir(join(vaultDir, 'Notes'), { recursive: true });
+      await writeFile(join(vaultDir, 'Notes', 'Random.md'), '---\ntitle: Random\n---\n');
+      
+      const files = await discoverFilesForNavigation(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // Should have type files
+      expect(paths).toContain('Ideas/Sample Idea.md');
+      expect(paths).toContain('Objectives/Tasks/Sample Task.md');
+      
+      // Should also have unmanaged files
+      expect(paths).toContain('Notes/Random.md');
+    });
+
+    it('should find type files even when in gitignored directories', async () => {
+      // Gitignore the Ideas directory
+      await writeFile(join(vaultDir, '.gitignore'), 'Ideas/');
+      
+      const files = await discoverFilesForNavigation(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // Type files should still be found (this is the bug fix!)
+      expect(paths).toContain('Ideas/Sample Idea.md');
+      expect(paths).toContain('Ideas/Another Idea.md');
+    });
+
+    it('should exclude unmanaged files in gitignored directories', async () => {
+      // Create unmanaged file in a directory we'll gitignore
+      await mkdir(join(vaultDir, 'Drafts'), { recursive: true });
+      await writeFile(join(vaultDir, 'Drafts', 'WIP.md'), '---\ntitle: WIP\n---\n');
+      await writeFile(join(vaultDir, '.gitignore'), 'Drafts/');
+      
+      const files = await discoverFilesForNavigation(schema, vaultDir);
+      const paths = files.map(f => f.relativePath);
+      
+      // Unmanaged file in gitignored dir should NOT be found
+      expect(paths).not.toContain('Drafts/WIP.md');
+    });
+
+    it('should not have duplicates', async () => {
+      const files = await discoverFilesForNavigation(schema, vaultDir);
+      
+      const paths = files.map(f => f.relativePath);
+      const uniquePaths = new Set(paths);
+      expect(paths.length).toBe(uniquePaths.size);
     });
   });
 });

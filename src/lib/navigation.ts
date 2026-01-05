@@ -10,7 +10,7 @@
 import { basename } from 'path';
 import type { LoadedSchema } from '../types/schema.js';
 import {
-  discoverManagedFiles,
+  discoverFilesForNavigation,
   findSimilarFiles,
   type ManagedFile
 } from './discovery.js';
@@ -47,16 +47,18 @@ export type { ManagedFile };
 /**
  * Build an index of all vault files for fast lookup.
  * 
- * Scans all markdown files in the vault except:
- * - .bwrb directory
- * - Hidden directories (starting with .)
- * - Directories in schema.audit.ignored_directories
- * - Directories in BWRB_AUDIT_EXCLUDE env var
- * - Files matching .gitignore patterns
+ * Uses hybrid discovery to ensure consistency with `list --type`:
+ * - Type files: Always included (ignores exclusion rules)
+ * - Unmanaged files: Respects exclusion rules (.bwrb, hidden dirs,
+ *   schema.audit.ignored_directories, BWRB_AUDIT_EXCLUDE, .gitignore)
+ * 
+ * This ensures typed files are always discoverable via search/open/edit,
+ * matching the behavior of `list --type`.
  */
 export async function buildNoteIndex(schema: LoadedSchema, vaultDir: string): Promise<NoteIndex> {
-  // Pass no typePath to get vault-wide scan
-  const files = await discoverManagedFiles(schema, vaultDir);
+  // Use hybrid discovery: type files (no exclusions) + unmanaged files (with exclusions)
+  // This ensures typed files are always discoverable via search/open/edit
+  const files = await discoverFilesForNavigation(schema, vaultDir);
   
   const byPath = new Map<string, ManagedFile>();
   const byBasename = new Map<string, ManagedFile[]>();
