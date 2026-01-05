@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
-import { createTestVault, cleanupTestVault, runCLI, createOwnershipTestVault } from '../fixtures/setup.js';
+import { createTestVault, cleanupTestVault, runCLI } from '../fixtures/setup.js';
 
 // Note: The `new` command uses the `prompts` library which requires a TTY.
 // Interactive tests cannot be run via piped stdin.
@@ -187,120 +187,7 @@ describe('new command', () => {
     });
   });
 
-  // Ownership tests are in a separate describe block with their own vault
-  // to avoid affecting other tests with the ownership schema configuration
-});
-
-describe('new command - JSON mode ownership flags', () => {
-  let ownershipVaultDir: string;
-
-  beforeEach(async () => {
-    ownershipVaultDir = await createOwnershipTestVault();
-  });
-
-  afterEach(async () => {
-    await cleanupTestVault(ownershipVaultDir);
-  });
-
-  it('should create owned note with --owner flag', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Project Research"}', '--owner', '[[My Project]]'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(true);
-    // Should be in the owner's folder
-    expect(output.path).toContain('Projects/My Project/research/Project Research.md');
-  });
-
-  it('should create pooled note with --standalone flag', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Standalone Research"}', '--standalone'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(true);
-    // Should be in the pooled Research folder
-    expect(output.path).toBe('Research/Standalone Research.md');
-  });
-
-  it('should default to pooled when neither --owner nor --standalone provided', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Default Research"}'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(true);
-    // Should be in the pooled Research folder
-    expect(output.path).toBe('Research/Default Research.md');
-  });
-
-  it('should error when both --owner and --standalone provided', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Test"}', '--owner', '[[My Project]]', '--standalone'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(false);
-    expect(output.error).toContain('Cannot use both --owner and --standalone');
-  });
-
-  it('should error when --owner used with non-ownable type', async () => {
-    const result = await runCLI(
-      ['new', 'idea', '--json', '{"name": "Test Idea"}', '--owner', '[[My Project]]'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(false);
-    expect(output.error).toContain('cannot be owned');
-  });
-
-  it('should error when --owner references non-existent note', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Test Research"}', '--owner', '[[Nonexistent Project]]'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(false);
-    expect(output.error).toContain('Owner not found');
-  });
-
-  it('should handle --owner with plain name (no brackets)', async () => {
-    const result = await runCLI(
-      ['new', 'research', '--json', '{"name": "Plain Owner Research"}', '--owner', 'My Project'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(true);
-    expect(output.path).toContain('Projects/My Project/research/');
-  });
-
-  it('should error when --standalone used with non-ownable type', async () => {
-    const result = await runCLI(
-      ['new', 'idea', '--json', '{"name": "Test Idea"}', '--standalone'],
-      ownershipVaultDir
-    );
-
-    expect(result.exitCode).not.toBe(0);
-    const output = JSON.parse(result.stdout);
-    expect(output.success).toBe(false);
-    expect(output.error).toContain('cannot be owned');
-    expect(output.error).toContain('--standalone is not applicable');
-  });
+  // Ownership tests are in new-ownership.test.ts with their own isolated vault
 });
 
 describe('new command - date expression evaluation', () => {
