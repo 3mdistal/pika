@@ -72,9 +72,9 @@ bwrb list objective/task       # List only tasks
 bwrb list objective/milestone  # List only milestones
 
 # List output options
-bwrb list --paths idea                       # Show vault-relative paths
+bwrb list --output paths idea                # Show vault-relative paths
 bwrb list --fields=status,priority idea      # Show selected frontmatter fields in a table
-bwrb list --paths --fields=status objective  # Combine paths + fields
+bwrb list --output paths --fields=status objective  # Combine paths + fields
 
 # Open a note by query (or browse all)
 bwrb open                                    # Browse all notes with picker
@@ -90,7 +90,8 @@ bwrb search "My Note"                        # Output: My Note (name only)
 bwrb search "Amb" --output json              # JSON output for scripting
 
 # Help
-bwrb help
+bwrb --help
+bwrb list --help
 ```
 
 ## Schema Structure
@@ -178,36 +179,23 @@ Special values: `$NOW` (datetime), `$TODAY` (date)
 ```
 
 **Dynamic (vault query):**
+
+Query notes of a specific type to populate field options:
+
 ```json
 {
   "milestone": {
     "prompt": "dynamic",
-    "source": "active_milestones",
+    "source": "objective/milestone",
+    "filter": "status != 'settled' && status != 'ghosted'",
     "format": "quoted-wikilink"
   }
 }
 ```
 
-Formats: `plain`, `wikilink` (`[[value]]`), `quoted-wikilink` (`"[[value]]"`)
-
-### Dynamic Sources
-
-Query the vault for options:
-
-```json
-{
-  "dynamic_sources": {
-    "active_milestones": {
-      "dir": "Objectives/Milestones",
-      "filter": {
-        "status": { "not_in": ["settled", "ghosted"] }
-      }
-    }
-  }
-}
-```
-
-Filter conditions: `equals`, `not_equals`, `in`, `not_in`
+- `source` - Type path to query (e.g., `"objective/milestone"`)
+- `filter` - Optional expression to filter results
+- `format` - Output format: `plain`, `wikilink` (`[[value]]`), `quoted-wikilink` (`"[[value]]"`)
 
 ### Body Sections
 
@@ -340,9 +328,7 @@ Use the `template` command to manage templates:
 # List all templates
 bwrb template list
 bwrb template list objective/task    # Filter by type
-
-# Show template details
-bwrb template show idea default
+bwrb template list idea default      # Show specific template details
 
 # Validate templates against schema
 bwrb template validate               # All templates
@@ -360,6 +346,9 @@ bwrb template edit idea default
 
 # Edit template from JSON
 bwrb template edit idea default --json '{"defaults": {"priority": "high"}}'
+
+# Delete a template
+bwrb template delete idea quick
 ```
 
 ## Adding a New Type

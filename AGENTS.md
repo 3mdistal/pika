@@ -18,7 +18,7 @@ src/
 │   ├── audit.ts       # Validate notes against schema
 │   ├── bulk.ts        # Batch frontmatter operations
 │   ├── schema.ts      # Schema inspection
-│   └── template.ts    # Template management (list, show, new, edit, validate)
+│   └── template.ts    # Template management (list, new, edit, delete, validate)
 ├── lib/               # Shared utilities
 │   ├── schema.ts      # Schema loading & resolution
 │   ├── template.ts    # Template discovery & parsing
@@ -36,10 +36,9 @@ src/
 
 ## Key Concepts
 
-- **Schema**: Each vault has `.bwrb/schema.json` defining types, enums, and dynamic sources
+- **Schema**: Each vault has `.bwrb/schema.json` defining types, enums, and field definitions
 - **Types**: Hierarchical (e.g., `objective/task`) with frontmatter definitions
 - **Templates**: Reusable note templates in `.bwrb/templates/{type}/{subtype}/*.md` with defaults and body structure
-- **Dynamic sources**: Query vault files for field values (e.g., active milestones)
 - **Wikilinks**: `[[Note]]` or `"[[Note]]"` format for Obsidian linking
 
 ## Development
