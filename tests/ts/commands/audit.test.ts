@@ -1901,4 +1901,247 @@ parent: "[[Child Task]]"
       expect(result.stdout).toContain('No issues found');
     });
   });
+
+  describe('wrong-directory detection', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-audit-wrongdir-'));
+      await mkdir(join(tempVaultDir, '.bwrb'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify(TEST_SCHEMA, null, 2)
+      );
+      // Create the expected directories
+      await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Objectives/Tasks'), { recursive: true });
+      await mkdir(join(tempVaultDir, 'Objectives/Milestones'), { recursive: true });
+      // Create an unexpected directory for misplaced files
+      await mkdir(join(tempVaultDir, 'Random'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      await rm(tempVaultDir, { recursive: true, force: true });
+    });
+
+    it('should detect wrong-directory in vault-wide audit', async () => {
+      // Create a properly placed file
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Good Idea.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      // Create a misplaced file: type is 'idea' but it's in Random/ not Ideas/
+      await writeFile(
+        join(tempVaultDir, 'Random', 'Misplaced Idea.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      // Run vault-wide audit (no type specified)
+      const result = await runCLI(['audit', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      
+      // Find the misplaced file in results
+      const misplacedFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Misplaced Idea.md')
+      );
+      expect(misplacedFile).toBeDefined();
+      
+      // Should have wrong-directory issue
+      const wrongDirIssue = misplacedFile.issues.find(
+        (i: { code: string }) => i.code === 'wrong-directory'
+      );
+      expect(wrongDirIssue).toBeDefined();
+      expect(wrongDirIssue.expected).toBe('Ideas');
+      
+      // The properly placed file should NOT appear in results (no issues)
+      const goodFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Good Idea.md')
+      );
+      expect(goodFile).toBeUndefined();
+    });
+
+    it('should detect wrong-directory in type-specific audit', async () => {
+      // Create a file in Objectives/Milestones/ but with type: task
+      // This tests the regression case where type-specific audit should still work
+      await writeFile(
+        join(tempVaultDir, 'Objectives/Milestones', 'Wrong Type Here.md'),
+        `---
+type: task
+status: backlog
+---
+`
+      );
+
+      // Run type-specific audit for milestone (which will discover files in Milestones/)
+      const result = await runCLI(['audit', 'milestone', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      
+      const wrongTypeFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Wrong Type Here.md')
+      );
+      expect(wrongTypeFile).toBeDefined();
+      
+      // Should detect wrong-directory because file's actual type (task) 
+      // should be in Objectives/Tasks, not Objectives/Milestones
+      const wrongDirIssue = wrongTypeFile.issues.find(
+        (i: { code: string }) => i.code === 'wrong-directory'
+      );
+      expect(wrongDirIssue).toBeDefined();
+      expect(wrongDirIssue.expected).toBe('Objectives/Tasks');
+    });
+
+    it('should flag files in directories with similar name prefix', async () => {
+      // Regression test: "Ideas2" should NOT be considered valid for type expecting "Ideas"
+      // This tests segment-aware path matching (Ideas2 !== Ideas)
+      await mkdir(join(tempVaultDir, 'Ideas2'), { recursive: true });
+
+      await writeFile(
+        join(tempVaultDir, 'Ideas2', 'Wrong Prefix.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      
+      const wrongFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Wrong Prefix.md')
+      );
+      expect(wrongFile).toBeDefined();
+      
+      const wrongDirIssue = wrongFile.issues.find(
+        (i: { code: string }) => i.code === 'wrong-directory'
+      );
+      expect(wrongDirIssue).toBeDefined();
+      expect(wrongDirIssue.expected).toBe('Ideas');
+    });
+
+    it('should not report wrong-directory for correctly placed files', async () => {
+      // Create files in their correct directories
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Correct Idea.md'),
+        `---
+type: idea
+status: raw
+priority: medium
+---
+`
+      );
+
+      await writeFile(
+        join(tempVaultDir, 'Objectives/Tasks', 'Correct Task.md'),
+        `---
+type: task
+status: backlog
+---
+`
+      );
+
+      await writeFile(
+        join(tempVaultDir, 'Objectives/Milestones', 'Correct Milestone.md'),
+        `---
+type: milestone
+status: in-flight
+---
+`
+      );
+
+      const result = await runCLI(['audit', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.files.length).toBe(0);
+      expect(output.summary.totalErrors).toBe(0);
+    });
+
+    it('should detect wrong-directory for files in computed default directory location', async () => {
+      // All types get a computed output_dir even if not explicitly set.
+      // This test verifies behavior when a file is placed in the wrong location
+      // relative to the computed default directory.
+      const schemaWithComputedDir = {
+        version: 2,
+        enums: {
+          status: ['raw', 'done'],
+        },
+        types: {
+          note: {
+            // No explicit output_dir - will compute to 'notes'
+            fields: {
+              status: { prompt: 'select', enum: 'status', default: 'raw' },
+            },
+          },
+        },
+      };
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify(schemaWithComputedDir, null, 2)
+      );
+
+      // Create directory for correct placement
+      await mkdir(join(tempVaultDir, 'notes'), { recursive: true });
+
+      // Create a note in the correct computed location
+      await writeFile(
+        join(tempVaultDir, 'notes', 'Correct Note.md'),
+        `---
+type: note
+status: raw
+---
+`
+      );
+
+      // Create a note in wrong location
+      await writeFile(
+        join(tempVaultDir, 'Random', 'Wrong Note.md'),
+        `---
+type: note
+status: raw
+---
+`
+      );
+
+      const result = await runCLI(['audit', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const output = JSON.parse(result.stdout);
+      
+      // The wrongly placed note should have wrong-directory issue
+      const wrongFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Wrong Note.md')
+      );
+      expect(wrongFile).toBeDefined();
+      const wrongDirIssue = wrongFile.issues.find(
+        (i: { code: string }) => i.code === 'wrong-directory'
+      );
+      expect(wrongDirIssue).toBeDefined();
+      expect(wrongDirIssue.expected).toBe('notes');
+      
+      // The correctly placed note should have no issues
+      const correctFile = output.files.find((f: { path: string }) => 
+        f.path.includes('Correct Note.md')
+      );
+      expect(correctFile).toBeUndefined();
+    });
+  });
 });

@@ -4,6 +4,13 @@ All notable changes to Bowerbird are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Vault-wide audit now detects wrong-directory issues** (#147)
+  - Previously, `bwrb audit` (without type) would not flag files in wrong directories
+  - Root cause: vault-wide discovery didn't set internal metadata needed by the check
+  - Fix: removed unnecessary condition since resolved type is available from frontmatter
+
 ### Added
 
 - **Hierarchy functions for `--where` expressions** (#121)

@@ -248,14 +248,18 @@ export async function auditFile(
 
   // Check wrong directory
   const expectedOutputDir = getOutputDir(schema, resolvedTypePath);
-  if (expectedOutputDir && file.expectedType) {
+  if (expectedOutputDir) {
     const expectedPath = expectedOutputDir;
     const actualDir = dirname(file.relativePath);
     // Normalize for comparison
     const normalizedExpected = expectedPath.replace(/\/$/, '');
     const normalizedActual = actualDir.replace(/\/$/, '');
     
-    if (!normalizedActual.startsWith(normalizedExpected)) {
+    // Segment-aware check: actualDir must be exactly expectedDir or a subdirectory
+    const isCorrectLocation =
+      normalizedActual === normalizedExpected ||
+      normalizedActual.startsWith(normalizedExpected + '/');
+    if (!isCorrectLocation) {
       issues.push({
         severity: 'error',
         code: 'wrong-directory',
