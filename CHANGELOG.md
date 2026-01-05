@@ -6,6 +6,11 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Fixed
 
+- **search/edit/open now find notes in gitignored type directories** (#149)
+  - Previously, notes in type directories that were also in `.gitignore` or `schema.audit.ignored_directories` were invisible to `search`, `edit`, and `open` commands, while `list --type` could find them
+  - Fix: navigation/search now uses hybrid discovery - type files ignore exclusion rules (matching `list --type` behavior), while unmanaged files still respect exclusions
+  - This ensures consistency with the product principle "unified verbs"
+
 - **Vault-wide audit now detects wrong-directory issues** (#147)
   - Previously, `bwrb audit` (without type) would not flag files in wrong directories
   - Root cause: vault-wide discovery didn't set internal metadata needed by the check

@@ -194,6 +194,83 @@ status: backlog
     });
   });
 
+  describe('discovery consistency with list command (issue #149)', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await createTestVault();
+    });
+
+    afterEach(async () => {
+      await cleanupTestVault(tempVaultDir);
+    });
+
+    it('should find notes in type directories even when gitignored', async () => {
+      // Gitignore the Ideas directory
+      await writeFile(join(tempVaultDir, '.gitignore'), 'Ideas/\n');
+
+      // Search should still find ideas because type directories ignore exclusion rules
+      const result = await runCLI(['search', 'Sample Idea', '--picker', 'none'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('Sample Idea');
+    });
+
+    it('should find all type files with JSON output when gitignored', async () => {
+      // Gitignore the Ideas directory
+      await writeFile(join(tempVaultDir, '.gitignore'), 'Ideas/\n');
+
+      // Search with JSON output
+      const result = await runCLI(['search', 'Idea', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(true);
+      
+      // Should find both ideas even though Ideas/ is gitignored
+      const names = json.data.map((d: { name: string }) => d.name);
+      expect(names).toContain('Sample Idea');
+      expect(names).toContain('Another Idea');
+    });
+
+    it('should exclude unmanaged files in gitignored directories', async () => {
+      // Create an unmanaged file outside type directories
+      const { mkdir } = await import('fs/promises');
+      await mkdir(join(tempVaultDir, 'Drafts'), { recursive: true });
+      await writeFile(join(tempVaultDir, 'Drafts', 'WIP Note.md'), `---
+title: WIP Note
+---
+Work in progress
+`);
+
+      // Gitignore the Drafts directory
+      await writeFile(join(tempVaultDir, '.gitignore'), 'Drafts/\n');
+
+      // Search should NOT find the unmanaged file in gitignored directory
+      const result = await runCLI(['search', 'WIP Note', '--picker', 'none'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('No matching notes found');
+    });
+
+    it('should find unmanaged files NOT in gitignored directories', async () => {
+      // Create an unmanaged file outside type directories
+      const { mkdir } = await import('fs/promises');
+      await mkdir(join(tempVaultDir, 'Notes'), { recursive: true });
+      await writeFile(join(tempVaultDir, 'Notes', 'Random Note.md'), `---
+title: Random Note
+---
+Some content
+`);
+
+      // Search should find the unmanaged file
+      const result = await runCLI(['search', 'Random Note', '--picker', 'none'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('Random Note');
+    });
+  });
+
   describe('error handling', () => {
     it('should error on no matching notes', async () => {
       const result = await runCLI(['search', 'nonexistent-note-xyz', '--picker', 'none'], vaultDir);
