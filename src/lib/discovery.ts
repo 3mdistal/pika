@@ -535,7 +535,17 @@ async function collectFilesForTypeWithOwnership(
  * Uses simple string matching for now.
  */
 export function findSimilarFiles(target: string, allFiles: Set<string>, maxResults = 5): string[] {
-  const targetLower = target.toLowerCase();
+  // Similarity scoring thresholds - named for maintainability
+  const MIN_SUBSTANTIAL_LEN = 4;  // Minimum length for substring/prefix matching
+  const MIN_WORD_LEN = 2;         // Minimum word length to consider in overlap
+  const LEV_RATIO = 0.2;          // Max Levenshtein distance as ratio of shorter string
+  const MIN_SCORE = 10;           // Minimum score to be considered similar
+
+  const targetLower = target.trim().toLowerCase();
+  
+  // Early return for empty/whitespace-only targets
+  if (!targetLower) return [];
+  
   const results: { file: string; score: number }[] = [];
   
   for (const file of allFiles) {
@@ -548,37 +558,51 @@ export function findSimilarFiles(target: string, allFiles: Set<string>, maxResul
     // Calculate similarity score
     let score = 0;
     
-    // Prefix match
-    if (fileBasename.startsWith(targetLower) || targetLower.startsWith(fileBasename)) {
+    // Prefix match - require substantial length to avoid short strings matching everything
+    const bothSubstantialForPrefix = targetLower.length >= MIN_SUBSTANTIAL_LEN && fileBasename.length >= MIN_SUBSTANTIAL_LEN;
+    if (bothSubstantialForPrefix && (fileBasename.startsWith(targetLower) || targetLower.startsWith(fileBasename))) {
       score += 50;
     }
     
-    // Contains match
-    if (fileBasename.includes(targetLower) || targetLower.includes(fileBasename)) {
+    // Contains match - require both strings to be substantial to avoid
+    // short strings like "ai" matching as substrings of longer words
+    if (bothSubstantialForPrefix && (fileBasename.includes(targetLower) || targetLower.includes(fileBasename))) {
       score += 30;
     }
     
-    // Word overlap
-    const targetWords = targetLower.split(/[\s\-_]+/);
-    const fileWords = fileBasename.split(/[\s\-_]+/);
-    const overlap = targetWords.filter(w => fileWords.some(fw => fw.includes(w) || w.includes(fw)));
+    // Word overlap - filter out empty strings and very short words to avoid false matches
+    // (empty strings occur from leading/trailing/consecutive delimiters like "_daily-note")
+    const targetWords = targetLower.split(/[\s\-_]+/).filter(w => w.length >= MIN_WORD_LEN);
+    const fileWords = fileBasename.split(/[\s\-_]+/).filter(w => w.length >= MIN_WORD_LEN);
+    // Require exact word match, or substantial substring match where BOTH words are >= 4 chars
+    // This prevents "ai" in "Jailbirds" from matching the file "AI"
+    const overlap = targetWords.filter(w => 
+      fileWords.some(fw => 
+        fw === w || (w.length >= MIN_SUBSTANTIAL_LEN && fw.length >= MIN_SUBSTANTIAL_LEN && (fw.includes(w) || w.includes(fw)))
+      )
+    );
     score += overlap.length * 10;
     
-    // Levenshtein distance for short strings
+    // Levenshtein distance for short strings - scale threshold by string length
+    // to avoid false positives like "README" matching "Resume" (dist 3)
     if (targetLower.length < 20 && fileBasename.length < 20) {
       const dist = levenshteinDistance(targetLower, fileBasename);
-      if (dist <= 3) {
-        score += (4 - dist) * 15;
+      const minLen = Math.min(targetLower.length, fileBasename.length);
+      // Require edit distance to be at most 20% of the shorter string (min 1)
+      const maxAllowedDist = Math.max(1, Math.floor(minLen * LEV_RATIO));
+      if (dist <= maxAllowedDist) {
+        score += (maxAllowedDist + 1 - dist) * 15;
       }
     }
     
-    if (score > 0) {
+    // Require a meaningful similarity score to avoid noise
+    if (score >= MIN_SCORE) {
       results.push({ file, score });
     }
   }
   
-  // Sort by score descending and return top results
-  results.sort((a, b) => b.score - a.score);
+  // Sort by score descending, then alphabetically for deterministic output
+  results.sort((a, b) => b.score - a.score || a.file.localeCompare(b.file));
   return results.slice(0, maxResults).map(r => r.file);
 }
 
