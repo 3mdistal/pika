@@ -1987,9 +1987,7 @@ Examples:
   bwrb schema list                # Show full schema overview
   bwrb schema list types          # List type names only
   bwrb schema list fields         # List all fields across types
-  bwrb schema list enums          # List all enums
-  bwrb schema list type task      # Show details for "task" type
-  bwrb schema list enum priority  # Show details for "priority" enum`);
+  bwrb schema list type task      # Show details for "task" type`);
 
 // schema list (no args - show full schema overview)
 listCommand
