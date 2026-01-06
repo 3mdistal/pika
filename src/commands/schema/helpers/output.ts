@@ -104,7 +104,7 @@ export function outputTypeDetailsJson(schema: LoadedSchema, typePath: string): v
 /**
  * Format a type definition for JSON output.
  */
-export function formatTypeForJson(
+function formatTypeForJson(
   schema: LoadedSchema,
   _typePath: string,
   typeDef: ResolvedType
@@ -133,7 +133,7 @@ export function formatTypeForJson(
 /**
  * Format a field for JSON output.
  */
-export function formatFieldForJson(field: Field): Record<string, unknown> {
+function formatFieldForJson(field: Field): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   // Determine type
@@ -164,7 +164,7 @@ export function formatFieldForJson(field: Field): Record<string, unknown> {
 /**
  * Format body sections for JSON output.
  */
-export function formatBodySectionsForJson(sections: BodySection[]): unknown[] {
+function formatBodySectionsForJson(sections: BodySection[]): unknown[] {
   return sections.map(section => {
     const result: Record<string, unknown> = {
       title: section.title,
@@ -198,7 +198,7 @@ export function showSchemaTree(schema: LoadedSchema): void {
 /**
  * Recursively print a type tree.
  */
-export function printTypeTree(
+function printTypeTree(
   schema: LoadedSchema,
   typePath: string,
   typeDef: ResolvedType,
@@ -309,7 +309,7 @@ export function showTypeDetails(schema: LoadedSchema, typePath: string): void {
 /**
  * Print details for a single field.
  */
-export function printFieldDetails(
+function printFieldDetails(
   name: string,
   field: Field,
   indent: string
