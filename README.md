@@ -142,7 +142,7 @@ Fields can be static or prompted:
 }
 ```
 
-Special values: `$NOW` (datetime), `$TODAY` (date)
+Special values: `$NOW` (local datetime, `YYYY-MM-DD HH:mm`), `$TODAY` (local date, `YYYY-MM-DD`)
 
 **Select from options:**
 ```json

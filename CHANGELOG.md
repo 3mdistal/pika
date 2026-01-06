@@ -4,6 +4,13 @@ All notable changes to Bowerbird are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Date macros now use local timezone** (#184)
+  - `$TODAY`, `$NOW`, `today()`, `now()`, and `{date}` now use local time instead of UTC
+  - Fixes off-by-one day errors when running commands in evening hours in timezones behind UTC
+  - Consistent semantics: all user-facing dates are in local timezone
+
 ### Added
 
 - **Global vault configuration system** (#184)

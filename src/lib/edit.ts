@@ -35,6 +35,7 @@ import {
 } from './output.js';
 import type { LoadedSchema, Field, BodySection } from '../types/schema.js';
 import { UserCancelledError } from './errors.js';
+import { expandStaticValue } from './local-date.js';
 
 // ============================================================================
 // Types
@@ -455,22 +456,6 @@ function formatCurrentValue(value: unknown): string {
     return value.join(', ');
   }
   return String(value);
-}
-
-/**
- * Expand special static values.
- */
-function expandStaticValue(value: string): string {
-  const now = new Date();
-
-  switch (value) {
-    case '$NOW':
-      return now.toISOString().slice(0, 16).replace('T', ' ');
-    case '$TODAY':
-      return now.toISOString().slice(0, 10);
-    default:
-      return value;
-  }
 }
 
 /**

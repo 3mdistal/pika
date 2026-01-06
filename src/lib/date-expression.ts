@@ -19,6 +19,7 @@
  */
 
 import { parseDuration } from './expression.js';
+import { formatLocalDate, formatLocalDateTime } from './local-date.js';
 
 /**
  * Regex pattern to match date expressions.
@@ -93,17 +94,19 @@ export function evaluateDateExpression(value: string): string | null {
 }
 
 /**
- * Format a Date as YYYY-MM-DD.
+ * Format a Date as YYYY-MM-DD in local timezone.
+ * Re-exported from local-date.ts for backward compatibility.
  */
 export function formatDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return formatLocalDate(date);
 }
 
 /**
- * Format a Date as YYYY-MM-DD HH:MM.
+ * Format a Date as YYYY-MM-DD HH:mm in local timezone.
+ * Re-exported from local-date.ts for backward compatibility.
  */
 export function formatDateTime(date: Date): string {
-  return date.toISOString().slice(0, 16).replace('T', ' ');
+  return formatLocalDateTime(date);
 }
 
 /**
