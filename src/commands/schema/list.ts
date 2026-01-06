@@ -8,6 +8,7 @@ import chalk from 'chalk';
 import { loadSchema, getTypeNames } from '../../lib/schema.js';
 import { resolveVaultDir } from '../../lib/vault.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes } from '../../lib/output.js';
+import { getGlobalOpts } from '../../lib/command.js';
 import {
   outputSchemaJson,
   outputTypeDetailsJson,
@@ -37,8 +38,7 @@ listCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-      const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
       const schema = await loadSchema(vaultDir);
 
       if (jsonMode) {
@@ -66,8 +66,7 @@ listCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-      const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
       const schema = await loadSchema(vaultDir);
 
       const typeNames = getTypeNames(schema).filter(t => t !== 'meta');
@@ -105,8 +104,7 @@ listCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-      const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
       const schema = await loadSchema(vaultDir);
 
       const allFields: Array<{ type: string; field: string; definition: Field }> = [];
@@ -152,13 +150,12 @@ listCommand
   .description('Show details for a specific type')
   .option('-o, --output <format>', 'Output format: text (default) or json')
   .action(async (name: string, options: ListCommandOptions, cmd: Command) => {
-    // Check both this command's options and parent's options (Commander.js quirk with nested commands)
-    const parentListOpts = cmd.parent?.opts() as ListCommandOptions | undefined;
-    const jsonMode = options.output === 'json' || parentListOpts?.output === 'json';
+    // Check both this command's options and global options
+    const globalOpts = getGlobalOpts(cmd);
+    const jsonMode = options.output === 'json' || globalOpts.output === 'json';
 
     try {
-      const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-      const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const vaultDir = resolveVaultDir(globalOpts);
       const schema = await loadSchema(vaultDir);
 
       if (jsonMode) {

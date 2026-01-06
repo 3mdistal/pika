@@ -4,6 +4,7 @@
  */
 
 import { Command } from 'commander';
+import { getGlobalOpts } from '../../lib/command.js';
 import chalk from 'chalk';
 import { loadSchema } from '../../lib/schema.js';
 import { resolveVaultDir } from '../../lib/vault.js';
@@ -53,8 +54,8 @@ export function registerNewFieldCommand(newCommand: Command): void {
       const jsonMode = options.output === 'json';
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -150,8 +151,8 @@ export function registerEditFieldCommand(editCommand: Command): void {
       const jsonMode = options.output === 'json';
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -288,8 +289,8 @@ export function registerDeleteFieldCommand(deleteCommand: Command): void {
       const dryRun = !options.execute;
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided

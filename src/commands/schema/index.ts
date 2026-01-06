@@ -8,6 +8,7 @@ import { loadSchema } from '../../lib/schema.js';
 import { resolveVaultDir } from '../../lib/vault.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes } from '../../lib/output.js';
 import { printError } from '../../lib/prompt.js';
+import { getGlobalOpts } from '../../lib/command.js';
 
 // Subcommand modules
 import { listCommand } from './list.js';
@@ -47,8 +48,7 @@ schemaCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-      const vaultDir = resolveVaultDir(parentOpts ?? {});
+      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
 
       // Loading the schema validates it via Zod
       await loadSchema(vaultDir);

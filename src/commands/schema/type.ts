@@ -4,6 +4,7 @@
  */
 
 import { Command } from 'commander';
+import { getGlobalOpts } from '../../lib/command.js';
 import chalk from 'chalk';
 import {
   loadSchema,
@@ -62,8 +63,8 @@ export function registerNewTypeCommand(newCommand: Command): void {
       const jsonMode = options.output === 'json';
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
 
         // Get name if not provided
         let typeName = name;
@@ -181,8 +182,8 @@ export function registerEditTypeCommand(editCommand: Command): void {
       const jsonMode = options.output === 'json';
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -299,8 +300,8 @@ export function registerDeleteTypeCommand(deleteCommand: Command): void {
       const dryRun = !options.execute;
 
       try {
-        const parentOpts = cmd.parent?.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided

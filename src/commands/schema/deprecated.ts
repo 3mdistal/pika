@@ -4,6 +4,7 @@
  */
 
 import { Command } from 'commander';
+import { getGlobalOpts } from '../../lib/command.js';
 import chalk from 'chalk';
 import {
   loadSchema,
@@ -67,8 +68,8 @@ export function registerDeprecatedCommands(schemaCommand: Command): void {
       warnDeprecated('schema edit-type', 'schema edit type');
 
       try {
-        const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
         const rawSchema = await loadRawSchemaJson(vaultDir);
 
@@ -252,8 +253,8 @@ export function registerDeprecatedCommands(schemaCommand: Command): void {
       warnDeprecated('schema edit-field', 'schema edit field');
 
       try {
-        const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         const schema = await loadSchema(vaultDir);
 
         // Validate type exists

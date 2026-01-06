@@ -4,6 +4,7 @@
  */
 
 import { Command } from 'commander';
+import { getGlobalOpts } from '../../lib/command.js';
 import chalk from 'chalk';
 import { loadSchema } from '../../lib/schema.js';
 import { resolveVaultDir } from '../../lib/vault.js';
@@ -96,8 +97,8 @@ Examples:
       const jsonMode = options.output === 'json';
 
       try {
-        const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         
         // Load current schema
         const currentSchema = await loadSchema(vaultDir);
@@ -177,8 +178,8 @@ Examples:
       const backup = options.noBackup !== true;
 
       try {
-        const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         
         // Load current schema
         const currentSchema = await loadSchema(vaultDir);
@@ -416,8 +417,8 @@ Examples:
       const limit = options.limit ? parseInt(options.limit, 10) : 10;
 
       try {
-        const parentOpts = cmd.parent?.parent?.opts() as { vault?: string } | undefined;
-        const vaultDir = resolveVaultDir(parentOpts ?? {});
+        const globalOpts = getGlobalOpts(cmd);
+        const vaultDir = resolveVaultDir(globalOpts);
         
         const history = await loadMigrationHistory(vaultDir);
         
