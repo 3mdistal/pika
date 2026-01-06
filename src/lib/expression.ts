@@ -1,5 +1,6 @@
 import jsep from 'jsep';
 import type { Expression, BinaryExpression, UnaryExpression, CallExpression, Identifier, Literal, MemberExpression } from 'jsep';
+import { formatLocalDate } from './local-date.js';
 
 // Configure jsep for our expression language
 jsep.addBinaryOp('&&', 2);
@@ -278,8 +279,7 @@ const FUNCTIONS: Record<string, FunctionImpl> = {
 
   // Date functions
   today: () => {
-    const now = new Date();
-    return now.toISOString().split('T')[0];
+    return formatLocalDate();
   },
 
   now: () => new Date(),

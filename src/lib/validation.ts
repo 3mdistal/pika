@@ -2,6 +2,7 @@ import type { LoadedSchema, Field } from '../types/schema.js';
 import { getFieldsForType, getDescendants, getType } from './schema.js';
 import { queryByType } from './vault.js';
 import { extractWikilinkTarget } from './audit/types.js';
+import { expandStaticValue } from './local-date.js';
 
 /**
  * Validation error types.
@@ -288,22 +289,6 @@ function getFieldExpected(_schema: LoadedSchema, field: Field): string[] | undef
     return field.options;
   }
   return undefined;
-}
-
-/**
- * Expand special static values like $NOW and $TODAY.
- */
-function expandStaticValue(value: string): string {
-  const now = new Date();
-
-  switch (value) {
-    case '$NOW':
-      return now.toISOString().slice(0, 16).replace('T', ' ');
-    case '$TODAY':
-      return now.toISOString().slice(0, 10);
-    default:
-      return value;
-  }
 }
 
 /**

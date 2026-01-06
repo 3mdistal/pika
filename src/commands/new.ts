@@ -53,6 +53,7 @@ import {
   validateConstraints,
 } from '../lib/template.js';
 import { evaluateTemplateDefault } from '../lib/date-expression.js';
+import { expandStaticValue } from '../lib/local-date.js';
 import type { LoadedSchema, Field, BodySection, Template, ResolvedType } from '../types/schema.js';
 import { UserCancelledError } from '../lib/errors.js';
 
@@ -1108,22 +1109,6 @@ async function promptField(
 
     default:
       return field.default;
-  }
-}
-
-/**
- * Expand special static values like $NOW and $TODAY.
- */
-function expandStaticValue(value: string): string {
-  const now = new Date();
-
-  switch (value) {
-    case '$NOW':
-      return now.toISOString().slice(0, 16).replace('T', ' ');
-    case '$TODAY':
-      return now.toISOString().slice(0, 10);
-    default:
-      return value;
   }
 }
 

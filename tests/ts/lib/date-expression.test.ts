@@ -6,10 +6,15 @@ import {
   formatDate,
   formatDateTime,
 } from '../../../src/lib/date-expression.js';
+import { formatLocalDate, formatLocalDateTime } from '../../../src/lib/local-date.js';
 
 describe('date-expression', () => {
   // Use a fixed date for consistent tests
   const fixedDate = new Date('2025-06-15T10:30:00.000Z');
+  
+  // Helper to compute expected local time strings from UTC instant
+  const expectedLocalDate = (date: Date) => formatLocalDate(date);
+  const expectedLocalDateTime = (date: Date) => formatLocalDateTime(date);
   
   beforeEach(() => {
     vi.useFakeTimers();
@@ -106,23 +111,29 @@ describe('date-expression', () => {
       expect(evaluateDateExpression("today() + '1y'")).toBe('2026-06-15');
     });
 
-    it('should evaluate now() to current datetime', () => {
+    it('should evaluate now() to current datetime (local timezone)', () => {
       const result = evaluateDateExpression('now()');
-      expect(result).toBe('2025-06-15 10:30');
+      // Result should be in local timezone, not UTC
+      expect(result).toBe(expectedLocalDateTime(fixedDate));
     });
 
-    it('should evaluate now() + hours', () => {
-      expect(evaluateDateExpression("now() + '2h'")).toBe('2025-06-15 12:30');
-      expect(evaluateDateExpression("now() + '14h'")).toBe('2025-06-16 00:30');
+    it('should evaluate now() + hours (local timezone)', () => {
+      const plus2h = new Date(fixedDate.getTime() + 2 * 60 * 60 * 1000);
+      const plus14h = new Date(fixedDate.getTime() + 14 * 60 * 60 * 1000);
+      expect(evaluateDateExpression("now() + '2h'")).toBe(expectedLocalDateTime(plus2h));
+      expect(evaluateDateExpression("now() + '14h'")).toBe(expectedLocalDateTime(plus14h));
     });
 
-    it('should evaluate now() - hours', () => {
-      expect(evaluateDateExpression("now() - '2h'")).toBe('2025-06-15 08:30');
+    it('should evaluate now() - hours (local timezone)', () => {
+      const minus2h = new Date(fixedDate.getTime() - 2 * 60 * 60 * 1000);
+      expect(evaluateDateExpression("now() - '2h'")).toBe(expectedLocalDateTime(minus2h));
     });
 
-    it('should evaluate now() + minutes', () => {
-      expect(evaluateDateExpression("now() + '30min'")).toBe('2025-06-15 11:00');
-      expect(evaluateDateExpression("now() + '90min'")).toBe('2025-06-15 12:00');
+    it('should evaluate now() + minutes (local timezone)', () => {
+      const plus30m = new Date(fixedDate.getTime() + 30 * 60 * 1000);
+      const plus90m = new Date(fixedDate.getTime() + 90 * 60 * 1000);
+      expect(evaluateDateExpression("now() + '30min'")).toBe(expectedLocalDateTime(plus30m));
+      expect(evaluateDateExpression("now() + '90min'")).toBe(expectedLocalDateTime(plus90m));
     });
 
     it('should return null for non-expressions', () => {
@@ -143,16 +154,22 @@ describe('date-expression', () => {
   });
 
   describe('formatDate', () => {
-    it('should format date as YYYY-MM-DD', () => {
-      expect(formatDate(new Date('2025-01-05T12:00:00Z'))).toBe('2025-01-05');
-      expect(formatDate(new Date('2025-12-31T23:59:59Z'))).toBe('2025-12-31');
+    it('should format date as YYYY-MM-DD in local timezone', () => {
+      const date1 = new Date('2025-01-05T12:00:00Z');
+      const date2 = new Date('2025-12-31T23:59:59Z');
+      // Use local date expectations since we now use local timezone
+      expect(formatDate(date1)).toBe(expectedLocalDate(date1));
+      expect(formatDate(date2)).toBe(expectedLocalDate(date2));
     });
   });
 
   describe('formatDateTime', () => {
-    it('should format datetime as YYYY-MM-DD HH:MM', () => {
-      expect(formatDateTime(new Date('2025-01-05T14:30:00Z'))).toBe('2025-01-05 14:30');
-      expect(formatDateTime(new Date('2025-12-31T09:05:00Z'))).toBe('2025-12-31 09:05');
+    it('should format datetime as YYYY-MM-DD HH:mm in local timezone', () => {
+      const date1 = new Date('2025-01-05T14:30:00Z');
+      const date2 = new Date('2025-12-31T09:05:00Z');
+      // Use local datetime expectations since we now use local timezone
+      expect(formatDateTime(date1)).toBe(expectedLocalDateTime(date1));
+      expect(formatDateTime(date2)).toBe(expectedLocalDateTime(date2));
     });
   });
 

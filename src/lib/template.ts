@@ -7,6 +7,7 @@ import { getType, getFieldsForType, getFieldOptions } from './schema.js';
 import { matchesExpression, parseExpression, type EvalContext } from './expression.js';
 import { applyDefaults } from './validation.js';
 import { evaluateTemplateDefault, validateDateExpression, isDateExpression } from './date-expression.js';
+import { formatLocalDate } from './local-date.js';
 
 /**
  * Template Discovery and Parsing
@@ -290,8 +291,8 @@ export function processTemplateBody(
     return formatDate(now, format);
   });
   
-  // Replace {date} with today's date
-  result = result.replace(/{date}/g, now.toISOString().slice(0, 10));
+  // Replace {date} with today's date (local timezone)
+  result = result.replace(/{date}/g, formatLocalDate(now));
   
   // Replace {fieldName} with frontmatter values
   for (const [key, value] of Object.entries(frontmatter)) {

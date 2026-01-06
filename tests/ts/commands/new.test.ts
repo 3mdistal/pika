@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { createTestVault, cleanupTestVault, runCLI } from '../fixtures/setup.js';
+import { formatLocalDate } from '../../../src/lib/local-date.js';
 
 // Note: The `new` command uses the `prompts` library which requires a TTY.
 // Interactive tests cannot be run via piped stdin.
@@ -219,10 +220,10 @@ describe('new command - date expression evaluation', () => {
     expect(content).not.toContain("today()");
     expect(content).toMatch(/deadline: \d{4}-\d{2}-\d{2}/);
     
-    // The date should be 7 days from today
+    // The date should be 7 days from today (in local timezone)
     const today = new Date();
     const expectedDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const expectedDateStr = expectedDate.toISOString().slice(0, 10);
+    const expectedDateStr = formatLocalDate(expectedDate);
     expect(content).toContain(`deadline: ${expectedDateStr}`);
   });
 
