@@ -690,19 +690,19 @@ schemaCommand
   .command('add-field <type-name> [field-name]')
   .description('Add a field to an existing type')
   .option('-o, --output <format>', 'Output format: text (default) or json')
-  .option('--type <prompt-type>', 'Prompt type: input, select, date, list, dynamic, fixed')
-  .option('--enum <name>', 'Enum name (for select type)')
-  .option('--source <type>', 'Source type (for dynamic type)')
+  .option('--type <prompt-type>', 'Prompt type: text, select, date, list, relation, boolean, number, fixed')
+  .option('--options <values>', 'Options for select type (comma-separated values)')
+  .option('--source <type>', 'Source type (for relation type)')
   .option('--value <value>', 'Fixed value (for fixed type)')
-  .option('--format <format>', 'Link format: plain, wikilink, quoted-wikilink (for dynamic)')
+  .option('--format <format>', 'Link format: plain, wikilink, quoted-wikilink (for relation)')
   .option('--required', 'Mark field as required')
   .option('--default <value>', 'Default value')
   .addHelpText('after', `
 Examples:
   # Non-interactive field creation (requires --type flag):
-  bwrb schema add-field book title --type input --required -o json
-  bwrb schema add-field book status --type select --enum status -o json
-  bwrb schema add-field book author --type dynamic --source person --format wikilink -o json
+  bwrb schema add-field book title --type text --required -o json
+  bwrb schema add-field book status --type select --options "draft,published,archived" -o json
+  bwrb schema add-field book author --type relation --source person --format wikilink -o json
   bwrb schema add-field book edition --type fixed --value "1st" -o json
   bwrb schema add-field book published --type date -o json
   bwrb schema add-field book tags --type list -o json
