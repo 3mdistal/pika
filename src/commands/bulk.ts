@@ -16,10 +16,15 @@ import {
   getTypeDefByPath,
   getTypeFamilies,
   getOptionsForField,
+  resolveTypeFromFrontmatter,
 } from '../lib/schema.js';
+import { discoverManagedFiles } from '../lib/discovery.js';
+import { parseNote } from '../lib/frontmatter.js';
+import { filterByPath } from '../lib/targeting.js';
 import { resolveVaultDir } from '../lib/vault.js';
 import { getGlobalOpts } from '../lib/command.js';
-import { printError } from '../lib/prompt.js';
+import { printError, promptConfirm } from '../lib/prompt.js';
+import { UserCancelledError } from '../lib/errors.js';
 import {
   printJson,
   jsonError,
@@ -49,12 +54,16 @@ interface BulkCommandOptions {
   move?: string;
   where?: string[];
   execute?: boolean;
+  force?: boolean;
   backup?: boolean;
   limit?: string;
   verbose?: boolean;
   quiet?: boolean;
   output?: string;
 }
+
+/** Threshold for "large operation" confirmation prompt */
+const LARGE_OPERATION_THRESHOLD = 50;
 
 export const bulkCommand = new Command('bulk')
   .description('Mass changes across filtered file sets')
@@ -96,8 +105,16 @@ Operations:
 Execution:
   -a, --all                   Target all files (requires explicit intent)
   --execute                   Actually apply changes (dry-run by default)
+  -f, --force                 Skip confirmation prompt for large/cross-type ops
   --backup                    Create backup before changes
   --limit <n>                 Limit to n files
+
+Cross-Type Operations:
+  When using --all without --type, operations affect ALL types in the vault.
+  A confirmation prompt shows affected file counts by type before execution.
+  Use --force to skip confirmation (required for JSON mode).
+
+  Large operations (50+ files) also prompt for confirmation regardless of targeting.
 
 Output:
   --verbose                   Show detailed changes per file
@@ -148,6 +165,7 @@ Examples:
   .option('-w, --where <expression...>', 'Filter with expression (multiple are ANDed)')
   .option('-a, --all', 'Target all files (requires explicit intent)')
   .option('-x, --execute', 'Actually apply changes (dry-run by default)')
+  .option('-f, --force', 'Skip confirmation prompt for large/cross-type operations')
   .option('--backup', 'Create backup before changes')
   .option('--limit <n>', 'Limit to n files')
   .option('--verbose', 'Show detailed changes per file')
@@ -358,6 +376,47 @@ Hint: Bulk operations require explicit targeting to prevent accidents.
         }
         printError(error);
         process.exit(1);
+      }
+
+      // Confirmation prompt for cross-type operations and large operations
+      // Only prompt when --execute is used (dry-run doesn't need confirmation)
+      const isCrossTypeOperation = !!(options.all && !typePath);
+      
+      if (options.execute && !options.force) {
+        // Pre-flight discovery to count files and detect if confirmation needed
+        const preflightResult = await preflightDiscovery({
+          typePath,
+          pathGlob,
+          vaultDir,
+          schema,
+          limit,
+        });
+
+        const needsConfirmation = isCrossTypeOperation || 
+          preflightResult.totalFiles >= LARGE_OPERATION_THRESHOLD;
+
+        if (needsConfirmation) {
+          // JSON mode requires --force for operations that need confirmation
+          if (jsonMode) {
+            const reason = isCrossTypeOperation 
+              ? 'Cross-type operations' 
+              : `Large operations (${preflightResult.totalFiles} files)`;
+            printJson(jsonError(`${reason} require --force flag in JSON mode`));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+
+          // Build confirmation message with type breakdown
+          const confirmMessage = buildConfirmationMessage(preflightResult, isCrossTypeOperation);
+          const confirmed = await promptConfirm(confirmMessage);
+          
+          if (confirmed === null) {
+            throw new UserCancelledError();
+          }
+          if (!confirmed) {
+            console.log('Operation cancelled.');
+            process.exit(0);
+          }
+        }
       }
 
       const result = await executeBulk({
@@ -668,6 +727,102 @@ function outputMoveTextResult(result: BulkResult, verbose: boolean, quiet: boole
       console.log(`  ${chalk.red('•')} ${error}`);
     }
   }
+}
+
+// ============================================================================
+// Preflight Discovery (for confirmation prompts)
+// ============================================================================
+
+interface PreflightOptions {
+  typePath: string | undefined;
+  pathGlob: string | undefined;
+  vaultDir: string;
+  schema: LoadedSchema;
+  limit: number | undefined;
+}
+
+interface PreflightResult {
+  totalFiles: number;
+  /** Map of type name to count of files of that type */
+  filesByType: Map<string, number>;
+}
+
+/**
+ * Pre-flight discovery to count files before execution.
+ * Used to determine if confirmation is needed and build the confirmation message.
+ * 
+ * Note: This is an upper-bound estimate. We don't filter by body content or
+ * where expressions in preflight because that would require parsing all files.
+ * The actual execution will filter further.
+ */
+async function preflightDiscovery(options: PreflightOptions): Promise<PreflightResult> {
+  const { typePath, pathGlob, vaultDir, schema, limit } = options;
+
+  // Discover files (same logic as executeBulk)
+  let files = await discoverManagedFiles(schema, vaultDir, typePath);
+
+  // Apply path glob filter
+  if (pathGlob) {
+    files = filterByPath(files, pathGlob);
+  }
+
+  // Note: We don't filter by body content or where expressions in preflight
+  // because that would require parsing all files. The preflight is an upper bound
+  // estimate. The actual execution will filter further.
+
+  // Apply limit for accuracy
+  if (limit) {
+    files = files.slice(0, limit);
+  }
+
+  // Count files by type
+  const filesByType = new Map<string, number>();
+  
+  for (const file of files) {
+    try {
+      const { frontmatter } = await parseNote(file.path);
+      const resolvedType = resolveTypeFromFrontmatter(schema, frontmatter) ?? 'unknown';
+      filesByType.set(resolvedType, (filesByType.get(resolvedType) ?? 0) + 1);
+    } catch {
+      // If we can't parse, count as unknown
+      filesByType.set('unknown', (filesByType.get('unknown') ?? 0) + 1);
+    }
+  }
+
+  return {
+    totalFiles: files.length,
+    filesByType,
+  };
+}
+
+/**
+ * Build a human-readable confirmation message.
+ */
+function buildConfirmationMessage(
+  preflight: PreflightResult,
+  isCrossType: boolean
+): string {
+  const parts: string[] = [];
+
+  if (isCrossType) {
+    parts.push(`This will modify ${preflight.totalFiles} files across all types:`);
+  } else {
+    parts.push(`This will modify ${preflight.totalFiles} files:`);
+  }
+
+  // Sort types by count (descending) for readability
+  const sortedTypes = Array.from(preflight.filesByType.entries())
+    .sort((a, b) => b[1] - a[1]);
+
+  for (const [typeName, count] of sortedTypes) {
+    // Don't pluralize type names (they may be paths like "objective/task")
+    parts.push(`  ${count} ${typeName}`);
+  }
+
+  parts.push('');
+  parts.push('Are you sure?');
+
+  return parts.join('\n');
 }
 
 // Re-export types for testing

@@ -132,6 +132,141 @@ describe('bulk command', () => {
     });
   });
 
+  describe('cross-type operations (--all without --type)', () => {
+    it('should discover files across all types in dry-run mode', async () => {
+      const result = await runCLI([
+        'bulk',
+        '--all',
+        '--set', 'custom-field=test'
+      ], vaultDir);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Dry run');
+      // Should include files from multiple types
+      expect(result.stdout).toContain('Sample Idea.md');
+      expect(result.stdout).toContain('Sample Task.md');
+    });
+
+    it('should require --force for cross-type --execute in JSON mode', async () => {
+      const result = await runCLI([
+        'bulk',
+        '--all',
+        '--set', 'custom-field=test',
+        '--execute',
+        '--output', 'json'
+      ], vaultDir);
+      
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain('--force');
+      expect(json.error).toContain('Cross-type');
+    });
+
+    it('should succeed with --force for cross-type --execute in JSON mode', async () => {
+      const tempVaultDir = await createTestVault();
+      try {
+        const result = await runCLI([
+          'bulk',
+          '--all',
+          '--set', 'custom-field=test',
+          '--execute',
+          '--force',
+          '--output', 'json'
+        ], tempVaultDir);
+        
+        expect(result.exitCode).toBe(0);
+        const json = JSON.parse(result.stdout);
+        expect(json.success).toBe(true);
+        expect(json.data.filesModified).toBeGreaterThan(0);
+      } finally {
+        await cleanupTestVault(tempVaultDir);
+      }
+    });
+
+    it('should succeed with --force for cross-type --execute in text mode', async () => {
+      const tempVaultDir = await createTestVault();
+      try {
+        const result = await runCLI([
+          'bulk',
+          '--all',
+          '--set', 'custom-field=test',
+          '--execute',
+          '--force'
+        ], tempVaultDir);
+        
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated');
+        
+        // Verify files were actually changed
+        const { frontmatter: ideaFm } = await parseNote(join(tempVaultDir, 'Ideas', 'Sample Idea.md'));
+        expect(ideaFm['custom-field']).toBe('test');
+        
+        const { frontmatter: taskFm } = await parseNote(join(tempVaultDir, 'Objectives', 'Tasks', 'Sample Task.md'));
+        expect(taskFm['custom-field']).toBe('test');
+      } finally {
+        await cleanupTestVault(tempVaultDir);
+      }
+    });
+
+    it('should work with --path selector (not cross-type) without --force', async () => {
+      // When using --path without --type, it's still targeted (not vault-wide)
+      const tempVaultDir = await createTestVault();
+      try {
+        const result = await runCLI([
+          'bulk',
+          '--path', 'Ideas/',
+          '--set', 'custom-field=test',
+          '--execute'
+        ], tempVaultDir);
+        
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated');
+      } finally {
+        await cleanupTestVault(tempVaultDir);
+      }
+    });
+
+    it('should combine --all with --where for filtered cross-type operations', async () => {
+      const result = await runCLI([
+        'bulk',
+        '--all',
+        '--where', "status == 'raw'",
+        '--set', 'custom-field=test'
+      ], vaultDir);
+      
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Dry run');
+      // Only Sample Idea has status=raw, not tasks
+      expect(result.stdout).toContain('Sample Idea.md');
+    });
+  });
+
+  describe('large operation confirmation', () => {
+    // Note: The large operation threshold is 50 files.
+    // These tests verify the threshold behavior conceptually,
+    // but creating 50+ files in tests would be slow.
+    
+    it('should not require --force for operations under threshold', async () => {
+      // Our test vault has < 50 files, so this should work without --force
+      const tempVaultDir = await createTestVault();
+      try {
+        const result = await runCLI([
+          'bulk',
+          '--type', 'idea',
+          '--all',
+          '--set', 'custom-field=test',
+          '--execute'
+        ], tempVaultDir);
+        
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('Updated');
+      } finally {
+        await cleanupTestVault(tempVaultDir);
+      }
+    });
+  });
+
   describe('dry-run mode', () => {
     it('should show what would change without modifying files', async () => {
       const result = await runCLI(['bulk', 'idea', '--all', '--set', 'status=backlog'], vaultDir);
