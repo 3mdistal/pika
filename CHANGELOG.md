@@ -4,6 +4,14 @@ All notable changes to Bowerbird are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **Consolidated CLI reference documentation** (#257)
+  - Each top-level command (`config`, `schema`, `template`) now has a single comprehensive page
+  - Subcommands are documented as sections with anchor links instead of separate pages
+  - Reduces navigation depth and makes it easier to see all related functionality at a glance
+  - Matches common CLI documentation patterns (e.g., git man pages)
+
 ### Added
 
 - **Vault initialization command** (#188)
@@ -30,6 +38,14 @@ All notable changes to Bowerbird are documented in this file.
   - Stale reference detection for body content (wikilinks in markdown body) is removed from v1.0 scope
   - Audit now only validates frontmatter relation fields, aligning with the documented type system scope
   - Body content links remain "unrestricted" per product vision; comprehensive body validation will be added in v2.0
+
+### Fixed
+
+- **Fixed markdown→wikilink conversion in link format migration** (#182)
+  - `bwrb schema migrate` now correctly converts markdown links `[Note](Note.md)` to wikilinks `[[Note]]`
+  - Previously, the conversion produced invalid output like `[[[Note](Note.md)]]`
+  - Added `extractMarkdownLinkTarget()` utility function for parsing markdown link targets
+  - Added comprehensive tests for link utilities and migration execution
 
 ### Changed (Breaking)
 
