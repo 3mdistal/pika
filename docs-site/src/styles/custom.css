@@ -1,0 +1,51 @@
+:root {
+	/* Bowerbird Blue Theme */
+	--sl-hue-accent: 215;
+	--sl-saturation-accent: 90%;
+	--sl-lightness-accent: 60%;
+}
+
+/* Dark mode tweaks */
+:root[data-theme='dark'] {
+	--sl-color-accent-high: hsl(215, 90%, 75%);
+	--sl-color-accent: hsl(215, 90%, 60%);
+	--sl-color-accent-low: hsl(215, 90%, 25%);
+}
+
+/* Light mode tweaks */
+:root[data-theme='light'] {
+	--sl-color-accent-high: hsl(215, 90%, 40%);
+	--sl-color-accent: hsl(215, 90%, 50%);
+	--sl-color-accent-low: hsl(215, 90%, 85%);
+}
+
+/* Enhance Hero Section */
+.hero {
+	position: relative;
+	overflow: hidden;
+}
+
+/* Make the tagline pop */
+.hero .tagline {
+	font-size: 1.5rem;
+	background: -webkit-linear-gradient(315deg, var(--sl-color-accent-high) 25%, var(--sl-color-accent));
+	-webkit-background-clip: text;
+	-webkit-text-fill-color: transparent;
+	font-weight: 600;
+}
+
+/* Card hover effects */
+.card-grid .card {
+	transition: transform 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.card-grid .card:hover {
+	transform: translateY(-2px);
+	border-color: var(--sl-color-accent);
+}
+
+/* Make code blocks look sharper */
+.expressive-code .frame {
+	border: 1px solid var(--sl-color-gray-5);
+	box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}

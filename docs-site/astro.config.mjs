@@ -13,6 +13,9 @@ export default defineConfig({
 			social: [
 				{ icon: 'github', label: 'GitHub', href: 'https://github.com/3mdistal/bwrb' },
 			],
+			customCss: [
+				'./src/styles/custom.css',
+			],
 			sidebar: [
 				// Getting Started (high priority for onboarding)
 				{
