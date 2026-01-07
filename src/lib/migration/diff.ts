@@ -27,6 +27,10 @@ export function diffSchemas(
   const changes = detectChanges(oldSchema, newSchema);
   const { deterministic, nonDeterministic } = classifyChanges(changes, newSchema);
   
+  // Check for config.linkFormat changes
+  const configOps = detectConfigChanges(oldSchema, newSchema);
+  deterministic.push(...configOps);
+  
   return {
     fromVersion,
     toVersion,
@@ -34,6 +38,34 @@ export function diffSchemas(
     nonDeterministic,
     hasChanges: deterministic.length > 0 || nonDeterministic.length > 0,
   };
+}
+
+/**
+ * Detect config-level changes that require migration.
+ */
+function detectConfigChanges(
+  oldSchema: Schema | undefined,
+  newSchema: Schema
+): MigrationOp[] {
+  const ops: MigrationOp[] = [];
+  
+  if (!oldSchema) {
+    return ops; // No config changes if no old schema
+  }
+  
+  // Check link_format change
+  const oldLinkFormat = oldSchema.config?.link_format ?? 'wikilink';
+  const newLinkFormat = newSchema.config?.link_format ?? 'wikilink';
+  
+  if (oldLinkFormat !== newLinkFormat) {
+    ops.push({
+      op: 'normalize-links',
+      fromFormat: oldLinkFormat,
+      toFormat: newLinkFormat,
+    });
+  }
+  
+  return ops;
 }
 
 /**
@@ -275,6 +307,8 @@ export function describeMigrationOp(op: MigrationOp): string {
       return `Rename type '${op.from}' to '${op.to}'`;
     case 'reparent-type':
       return `Change parent of '${op.typeName}' from '${op.from ?? 'root'}' to '${op.to ?? 'root'}'`;
+    case 'normalize-links':
+      return `Normalize all links from '${op.fromFormat}' to '${op.toFormat}'`;
   }
 }
 
@@ -371,8 +405,8 @@ function formatOpForDisplay(op: MigrationOp): string {
       return `~ Rename type "${op.from}" to "${op.to}"`;
     case 'reparent-type':
       return `~ Change parent of type "${op.typeName}" from "${op.from ?? 'none'}" to "${op.to ?? 'none'}"`;
-    default:
-      return `? Unknown operation`;
+    case 'normalize-links':
+      return `~ Normalize all links from "${op.fromFormat}" to "${op.toFormat}" format`;
   }
 }
 

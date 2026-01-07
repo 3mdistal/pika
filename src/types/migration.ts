@@ -60,15 +60,30 @@ export const TypeMigrationOpSchema = z.discriminatedUnion('op', [
 ]);
 
 /**
+ * Config-level migration operations.
+ * These affect vault-wide settings that require content changes.
+ */
+export const ConfigMigrationOpSchema = z.discriminatedUnion('op', [
+  // Normalize all relation field links to match config.linkFormat
+  z.object({
+    op: z.literal('normalize-links'),
+    fromFormat: z.enum(['wikilink', 'markdown']),
+    toFormat: z.enum(['wikilink', 'markdown']),
+  }),
+]);
+
+/**
  * All migration operations.
  */
 export const MigrationOpSchema = z.union([
   FieldMigrationOpSchema,
   TypeMigrationOpSchema,
+  ConfigMigrationOpSchema,
 ]);
 
 export type FieldMigrationOp = z.infer<typeof FieldMigrationOpSchema>;
 export type TypeMigrationOp = z.infer<typeof TypeMigrationOpSchema>;
+export type ConfigMigrationOp = z.infer<typeof ConfigMigrationOpSchema>;
 export type MigrationOp = z.infer<typeof MigrationOpSchema>;
 
 // ============================================================================

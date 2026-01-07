@@ -4,6 +4,25 @@ All notable changes to Bowerbird are documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Link normalization during schema migration** (#86)
+  - When `config.link_format` changes in schema.json, `bwrb schema migrate` automatically normalizes all relation field links to the new format
+  - Supports conversion between `wikilink` (`[[Note]]`) and `markdown` (`[Note](Note.md)`) formats
+  - Changes are applied as part of the normal migration workflow with dry-run preview and backup
+
+- **High-confidence stale reference auto-fix** (#86)
+  - `bwrb audit --fix --auto` now automatically fixes stale references when exactly one similar file exists with high similarity
+  - Uses Levenshtein distance (<=2) or prefix matching to determine high confidence
+  - Low-confidence matches are still queued for manual review
+
+### Changed
+
+- **Audit body link validation deferred to v2.0** (#86)
+  - Stale reference detection for body content (wikilinks in markdown body) is removed from v1.0 scope
+  - Audit now only validates frontmatter relation fields, aligning with the documented type system scope
+  - Body content links remain "unrestricted" per product vision; comprehensive body validation will be added in v2.0
+
 ### Changed (Breaking)
 
 - **Renamed "enum" terminology to "option" for consistency with schema model** (#179)
