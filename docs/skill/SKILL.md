@@ -120,6 +120,41 @@ bwrb audit --fix
 bwrb audit --fix --auto  # Auto-apply unambiguous fixes
 ```
 
+#### Type Inference and Check Dependencies
+
+Audit resolves each file's type from its frontmatter `type` field. Understanding this is critical for automation:
+
+- **Type resolution**: Each file's `type` field is read and matched to the schema by short name (e.g., `task`, not `objective/task`)
+- **Early termination**: If `type` is missing or invalid, audit reports `orphan-file` or `invalid-type` and **skips all type-dependent checks**
+- **Filtering vs fixing**: `--type` filters which files to audit; it does not fix missing type fields
+
+**Check dependency table:**
+
+| Check | Requires Type Resolution |
+|-------|-------------------------|
+| `orphan-file` | No (reports missing type) |
+| `invalid-type` | No (reports unrecognized type) |
+| `missing-required` | Yes |
+| `invalid-enum` | Yes |
+| `unknown-field` | Yes |
+| `wrong-directory` | Yes |
+| `format-violation` | Yes |
+| `stale-reference` | Partial (body wikilinks always checked; frontmatter relation fields require type) |
+
+**Workflow for files with type issues:**
+
+```bash
+# Step 1: Find files with type problems
+bwrb audit --only orphan-file --output json
+bwrb audit --only invalid-type --output json
+
+# Step 2: Fix type field (bulk or individual)
+bwrb bulk --path "SomeDir/" --set type=task --execute
+
+# Step 3: Re-run full audit to catch type-dependent issues
+bwrb audit
+```
+
 ### Dashboards (Saved Queries)
 
 Dashboards save common list queries for reuse:

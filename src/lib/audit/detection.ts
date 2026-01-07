@@ -206,7 +206,7 @@ export async function auditFile(
     issues.push({
       severity: 'error',
       code: 'orphan-file',
-      message: "No 'type' field (in managed directory)",
+      message: "No 'type' field (in managed directory). Type-dependent checks skipped.",
       autoFixable: Boolean(file.expectedType),
       ...(file.expectedType && { inferredType: file.expectedType }),
     });
@@ -221,7 +221,7 @@ export async function auditFile(
     issues.push({
       severity: 'error',
       code: 'invalid-type',
-      message: `Invalid type: '${typeValue}'`,
+      message: `Invalid type: '${typeValue}'. Type-dependent checks skipped.`,
       field: 'type',
       value: typeValue,
       ...(suggestion && { suggestion: `Did you mean '${suggestion}'?` }),
@@ -236,7 +236,7 @@ export async function auditFile(
     issues.push({
       severity: 'error',
       code: 'invalid-type',
-      message: `Invalid type path: '${resolvedTypePath}'`,
+      message: `Invalid type path: '${resolvedTypePath}'. Type-dependent checks skipped.`,
       field: 'type',
       value: typeValue,
       autoFixable: false,
