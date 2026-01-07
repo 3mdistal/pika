@@ -16,7 +16,7 @@ import {
   getDescendants,
 } from '../schema.js';
 import { parseNote } from '../frontmatter.js';
-import { suggestEnumValue, suggestFieldName } from '../validation.js';
+import { suggestOptionValue, suggestFieldName } from '../validation.js';
 import { applyFrontmatterFilters } from '../query.js';
 import { searchContent } from '../content-search.js';
 import type { LoadedSchema, Field } from '../../types/schema.js';
@@ -306,10 +306,10 @@ export async function auditFile(
       const validOptions = field.options;
       const strValue = String(value);
       if (!validOptions.includes(strValue)) {
-        const suggestion = suggestEnumValue(strValue, validOptions);
+        const suggestion = suggestOptionValue(strValue, validOptions);
         issues.push({
           severity: 'error',
-          code: 'invalid-enum',
+          code: 'invalid-option',
           message: `Invalid ${fieldName} value: '${value}'`,
           field: fieldName,
           value,
@@ -628,7 +628,7 @@ function checkSingleContextValue(
   
   // Type mismatch!
   const validTypesArray = Array.from(validTypes);
-  const suggestion = suggestEnumValue(actualType, validTypesArray);
+  const suggestion = suggestOptionValue(actualType, validTypesArray);
   
   const sourceDisplay = sources.length === 1 ? sources[0] : sources.join(' or ');
   return {

@@ -59,7 +59,7 @@ Issue Types:
   orphan-file       File in managed directory but no 'type' field
   invalid-type      Type field value not recognized
   missing-required  Required field is missing
-  invalid-enum      Field value not in allowed enum values
+  invalid-option    Field value not in allowed option values
   unknown-field     Field not defined in schema (warning by default)
   wrong-directory   File location doesn't match its type
   format-violation  Field value doesn't match expected format (wikilink, etc.)
@@ -68,7 +68,7 @@ Issue Types:
 Type Resolution:
   Audit resolves each file's type from its frontmatter 'type' field.
   If 'type' is missing or invalid, audit reports orphan-file/invalid-type
-  and skips type-dependent checks (missing-required, invalid-enum, etc.).
+  and skips type-dependent checks (missing-required, invalid-option, etc.).
   Use --type to filter by type; it does not fix missing type fields.
 
 Targeting Options:

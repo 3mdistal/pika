@@ -315,14 +315,14 @@ test_filter_invalid_field_error() {
     assert_contains "$output" "Valid fields:" "Should list valid fields"
 }
 
-test_filter_invalid_enum_value_error() {
+test_filter_invalid_option_value_error() {
     local output
     output=$(run_ovault "" list idea --status=invalid-status 2>&1)
     local exit_code=$?
 
-    assert_equals "1" "$exit_code" "Should exit with error for invalid enum value"
+    assert_equals "1" "$exit_code" "Should exit with error for invalid option value"
     assert_contains "$output" "Invalid value" "Should report invalid value"
-    assert_contains "$output" "Valid values:" "Should list valid enum values"
+    assert_contains "$output" "Valid values:" "Should list valid option values"
 }
 
 test_filter_typo_in_field_name() {

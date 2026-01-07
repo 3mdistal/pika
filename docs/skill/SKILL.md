@@ -139,7 +139,7 @@ Audit resolves each file's type from its frontmatter `type` field. Understanding
 | `orphan-file` | No (reports missing type) |
 | `invalid-type` | No (reports unrecognized type) |
 | `missing-required` | Yes |
-| `invalid-enum` | Yes |
+| `invalid-option` | Yes |
 | `unknown-field` | Yes |
 | `wrong-directory` | Yes |
 | `format-violation` | Yes |

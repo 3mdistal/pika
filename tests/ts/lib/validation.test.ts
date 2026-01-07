@@ -3,7 +3,7 @@ import {
   validateFrontmatter,
   validateContextFields,
   applyDefaults,
-  suggestEnumValue,
+  suggestOptionValue,
   suggestFieldName,
   formatValidationErrors,
 } from '../../../src/lib/validation.js';
@@ -36,7 +36,7 @@ describe('validation', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it('should fail on invalid enum value', () => {
+    it('should fail on invalid option value', () => {
       const result = validateFrontmatter(schema, 'idea', {
         type: 'idea',
         status: 'invalid-status',
@@ -44,11 +44,11 @@ describe('validation', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe('invalid_enum_value');
+      expect(result.errors[0].type).toBe('invalid_option_value');
       expect(result.errors[0].field).toBe('status');
     });
 
-    it('should suggest similar enum values', () => {
+    it('should suggest similar option values', () => {
       const result = validateFrontmatter(schema, 'idea', {
         type: 'idea',
         status: 'rae', // typo for 'raw'
@@ -78,7 +78,7 @@ describe('validation', () => {
 
       expect(result.valid).toBe(false);
       expect(result.errors).toHaveLength(1);
-      expect(result.errors[0].type).toBe('invalid_enum_value');
+      expect(result.errors[0].type).toBe('invalid_option_value');
       expect(result.errors[0].field).toBe('labels');
       expect(result.errors[0].value).toBe('invalid-label');
     });
@@ -191,26 +191,26 @@ describe('validation', () => {
     });
   });
 
-  describe('suggestEnumValue', () => {
+  describe('suggestOptionValue', () => {
     it('should return exact match with different case', () => {
-      expect(suggestEnumValue('RAW', ['raw', 'backlog'])).toBe('raw');
+      expect(suggestOptionValue('RAW', ['raw', 'backlog'])).toBe('raw');
     });
 
     it('should return prefix match', () => {
-      expect(suggestEnumValue('back', ['raw', 'backlog'])).toBe('backlog');
+      expect(suggestOptionValue('back', ['raw', 'backlog'])).toBe('backlog');
     });
 
     it('should return close match by Levenshtein distance', () => {
-      expect(suggestEnumValue('bakclog', ['raw', 'backlog'])).toBe('backlog');
+      expect(suggestOptionValue('bakclog', ['raw', 'backlog'])).toBe('backlog');
     });
 
     it('should return undefined for no close match', () => {
-      expect(suggestEnumValue('xyz', ['raw', 'backlog'])).toBeUndefined();
+      expect(suggestOptionValue('xyz', ['raw', 'backlog'])).toBeUndefined();
     });
 
     it('should handle in-progress style values', () => {
-      expect(suggestEnumValue('wip', ['draft', 'in-progress', 'done'])).toBeUndefined();
-      expect(suggestEnumValue('in-prog', ['draft', 'in-progress', 'done'])).toBe('in-progress');
+      expect(suggestOptionValue('wip', ['draft', 'in-progress', 'done'])).toBeUndefined();
+      expect(suggestOptionValue('in-prog', ['draft', 'in-progress', 'done'])).toBe('in-progress');
     });
   });
 
@@ -232,7 +232,7 @@ describe('validation', () => {
     it('should format single error', () => {
       const output = formatValidationErrors([
         {
-          type: 'invalid_enum_value',
+          type: 'invalid_option_value',
           field: 'status',
           value: 'bad',
           message: 'Invalid value for status: "bad"',
@@ -248,7 +248,7 @@ describe('validation', () => {
     it('should include suggestion when available', () => {
       const output = formatValidationErrors([
         {
-          type: 'invalid_enum_value',
+          type: 'invalid_option_value',
           field: 'status',
           value: 'rae',
           message: 'Invalid value for status: "rae"',
