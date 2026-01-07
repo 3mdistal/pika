@@ -5,6 +5,8 @@
 import { parseNote, writeNote } from '../frontmatter.js';
 import { discoverManagedFiles } from '../discovery.js';
 import { createBackup } from '../bulk/backup.js';
+import { getFieldsForType, resolveTypeFromFrontmatter } from '../schema.js';
+import { toWikilink, toMarkdownLink, isWikilink, isMarkdownLink } from '../audit/types.js';
 import type { LoadedSchema } from '../../types/schema.js';
 import type {
   MigrationPlan,
@@ -71,7 +73,8 @@ export async function executeMigration(
       const changes = calculateFileChanges(
         frontmatter,
         typeName,
-        opsByType
+        opsByType,
+        schema
       );
 
       if (changes.length > 0) {
@@ -178,7 +181,8 @@ function getOperationTargetType(op: MigrationOp): string | null {
 function calculateFileChanges(
   frontmatter: Record<string, unknown>,
   typeName: string,
-  opsByType: Map<string | null, MigrationOp[]>
+  opsByType: Map<string | null, MigrationOp[]>,
+  schema: LoadedSchema
 ): AppliedChange[] {
   const changes: AppliedChange[] = [];
 
@@ -190,61 +194,66 @@ function calculateFileChanges(
   const allOps = [...typeOps, ...globalOps];
 
   for (const op of allOps) {
-    const change = calculateSingleChange(frontmatter, op);
-    if (change) {
-      changes.push(change);
-    }
+    const opChanges = calculateSingleChange(frontmatter, op, schema);
+    changes.push(...opChanges);
   }
 
   return changes;
 }
 
 /**
- * Calculate the change for a single operation on a file.
+ * Calculate the changes for a single operation on a file.
+ * Returns an array because normalize-links can affect multiple fields.
  */
 function calculateSingleChange(
   frontmatter: Record<string, unknown>,
-  op: MigrationOp
-): AppliedChange | null {
+  op: MigrationOp,
+  schema: LoadedSchema
+): AppliedChange[] {
   switch (op.op) {
     case 'add-field': {
       // Only add if field doesn't exist and has a default
       if (!(op.field in frontmatter) && op.default !== undefined) {
-        return {
+        return [{
           kind: 'set',
           field: op.field,
           oldValue: undefined,
           newValue: op.default,
-        };
+        }];
       }
-      return null;
+      return [];
     }
 
     case 'remove-field': {
       // Remove field if it exists
       if (op.field in frontmatter) {
-        return {
+        return [{
           kind: 'delete',
           field: op.field,
           oldValue: frontmatter[op.field],
           newValue: undefined,
-        };
+        }];
       }
-      return null;
+      return [];
     }
 
     case 'rename-field': {
       // Rename field if old name exists and new name doesn't
       if (op.from in frontmatter && !(op.to in frontmatter)) {
-        return {
+        return [{
           kind: 'rename',
           field: op.from,
           newField: op.to,
           oldValue: frontmatter[op.from],
           newValue: frontmatter[op.from],
-        };
+        }];
       }
-      return null;
+      return [];
+    }
+
+    case 'normalize-links': {
+      // Normalize all relation field values to the target format
+      return calculateLinkNormalizationChanges(frontmatter, op.toFormat, schema);
     }
 
     // These operations don't directly affect frontmatter values
@@ -252,10 +261,81 @@ function calculateSingleChange(
     case 'remove-type':
     case 'rename-type':
     case 'reparent-type':
-      return null;
+      return [];
+  }
+}
 
-    default:
-      return null;
+/**
+ * Calculate link normalization changes for all relation fields in a file.
+ */
+function calculateLinkNormalizationChanges(
+  frontmatter: Record<string, unknown>,
+  toFormat: 'wikilink' | 'markdown',
+  schema: LoadedSchema
+): AppliedChange[] {
+  const changes: AppliedChange[] = [];
+  
+  // Resolve the file's type to get its field definitions
+  const typePath = resolveTypeFromFrontmatter(schema, frontmatter);
+  if (!typePath) {
+    return changes; // Can't determine type, skip normalization
+  }
+  
+  const fields = getFieldsForType(schema, typePath);
+  
+  for (const [fieldName, field] of Object.entries(fields)) {
+    // Only process relation fields
+    if (field.prompt !== 'relation') continue;
+    
+    const value = frontmatter[fieldName];
+    if (!value) continue;
+    
+    // Handle array values (multiple: true fields)
+    if (Array.isArray(value)) {
+      const normalizedArray = value.map(v => normalizeLink(String(v), toFormat));
+      // Check if any values changed
+      const hasChanges = normalizedArray.some((n, i) => n !== String(value[i]));
+      if (hasChanges) {
+        changes.push({
+          kind: 'set',
+          field: fieldName,
+          oldValue: value,
+          newValue: normalizedArray,
+        });
+      }
+    } else {
+      const oldValue = String(value);
+      const newValue = normalizeLink(oldValue, toFormat);
+      if (newValue !== oldValue) {
+        changes.push({
+          kind: 'set',
+          field: fieldName,
+          oldValue,
+          newValue,
+        });
+      }
+    }
+  }
+  
+  return changes;
+}
+
+/**
+ * Normalize a single link value to the target format.
+ */
+function normalizeLink(value: string, toFormat: 'wikilink' | 'markdown'): string {
+  if (toFormat === 'wikilink') {
+    // Convert to wikilink format if not already
+    if (!isWikilink(value)) {
+      return toWikilink(value);
+    }
+    return value;
+  } else {
+    // Convert to markdown format if not already
+    if (!isMarkdownLink(value)) {
+      return toMarkdownLink(value);
+    }
+    return value;
   }
 }
 

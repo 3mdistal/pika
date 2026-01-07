@@ -184,6 +184,79 @@ function getDefaultValue(
 }
 
 // ============================================================================
+// High-Confidence Match Detection
+// ============================================================================
+
+/**
+ * Calculate Levenshtein distance between two strings.
+ * Used for determining string similarity for auto-fix decisions.
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+
+  // Initialize first column
+  for (let i = 0; i <= a.length; i++) {
+    matrix[i] = [i];
+  }
+
+  // Initialize first row
+  for (let j = 0; j <= b.length; j++) {
+    matrix[0]![j] = j;
+  }
+
+  // Fill in the rest of the matrix
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        matrix[i]![j] = matrix[i - 1]![j - 1]!;
+      } else {
+        matrix[i]![j] = Math.min(
+          matrix[i - 1]![j - 1]! + 1, // substitution
+          matrix[i]![j - 1]! + 1,     // insertion
+          matrix[i - 1]![j]! + 1      // deletion
+        );
+      }
+    }
+  }
+
+  return matrix[a.length]![b.length]!;
+}
+
+/**
+ * Check if a similar file is a high-confidence match for auto-fix.
+ * 
+ * High confidence means:
+ * - Levenshtein distance <= 2 (very similar names)
+ * - OR one is a prefix/suffix of the other (typo at start/end)
+ * - OR case-insensitive exact match
+ */
+function isHighConfidenceMatch(target: string, similar: string): boolean {
+  const targetLower = target.toLowerCase();
+  const similarLower = similar.toLowerCase();
+  
+  // Case-insensitive exact match
+  if (targetLower === similarLower) {
+    return true;
+  }
+  
+  // Prefix/suffix relationship (handles singular/plural, minor additions)
+  if (targetLower.startsWith(similarLower) || similarLower.startsWith(targetLower)) {
+    const diff = Math.abs(target.length - similar.length);
+    if (diff <= 2) {
+      return true;
+    }
+  }
+  
+  // Levenshtein distance <= 2
+  const distance = levenshteinDistance(targetLower, similarLower);
+  if (distance <= 2) {
+    return true;
+  }
+  
+  return false;
+}
+
+// ============================================================================
 // Auto-Fix Mode
 // ============================================================================
 
@@ -207,8 +280,29 @@ export async function runAutoFix(
     const fixableIssues = result.issues.filter(i => i.autoFixable);
     const nonFixableIssues = result.issues.filter(i => !i.autoFixable);
 
-    // Queue non-fixable issues for manual review
+    // Handle stale-reference issues with high-confidence matches
     for (const issue of nonFixableIssues) {
+      if (issue.code === 'stale-reference' && !issue.inBody && issue.field) {
+        // Check for high-confidence match
+        if (issue.similarFiles?.length === 1 && 
+            issue.targetName && 
+            isHighConfidenceMatch(issue.targetName, issue.similarFiles[0]!)) {
+          const replacement = `[[${issue.similarFiles[0]}]]`;
+          const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, replacement);
+          if (fixResult.action === 'fixed') {
+            console.log(chalk.cyan(`  ${result.relativePath}`));
+            console.log(chalk.green(`    ✓ Fixed ${issue.field}: [[${issue.targetName}]] → ${replacement}`));
+            fixed++;
+            continue; // Don't add to manual review
+          } else {
+            console.log(chalk.cyan(`  ${result.relativePath}`));
+            console.log(chalk.red(`    ✗ Failed to fix ${issue.field}: ${fixResult.message}`));
+            failed++;
+            continue;
+          }
+        }
+      }
+      // Queue for manual review if not auto-fixed
       manualReviewNeeded.push({ file: result.relativePath, issue });
     }
 

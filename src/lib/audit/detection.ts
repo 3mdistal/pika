@@ -26,7 +26,6 @@ import {
   type ManagedFile,
   type AuditRunOptions,
   ALLOWED_NATIVE_FIELDS,
-  WIKILINK_PATTERN,
   isWikilink,
   isMarkdownLink,
   extractWikilinkTarget,
@@ -185,11 +184,9 @@ export async function auditFile(
   const issues: AuditIssue[] = [];
 
   let frontmatter: Record<string, unknown>;
-  let body: string;
   try {
     const parsed = await parseNote(file.path);
     frontmatter = parsed.frontmatter;
-    body = parsed.body;
   } catch {
     issues.push({
       severity: 'error',
@@ -367,11 +364,8 @@ export async function auditFile(
     }
   }
 
-  // Check for stale references in body content
-  if (allFiles && body) {
-    const bodyStaleIssues = checkBodyStaleReferences(body, allFiles);
-    issues.push(...bodyStaleIssues);
-  }
+  // Note: Body stale-reference detection is deferred to v2.0
+  // Per product scope, v1.0 only validates frontmatter relation fields
 
   // Check for ownership violations
   if (ownershipIndex && notePathMap) {
@@ -492,49 +486,6 @@ function checkStaleReference(
   }
   
   return issue;
-}
-
-/**
- * Check body content for stale wikilink references.
- */
-function checkBodyStaleReferences(body: string, allFiles: Set<string>): AuditIssue[] {
-  const issues: AuditIssue[] = [];
-  const lines = body.split('\n');
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!;
-    const lineNumber = i + 1; // 1-based line numbers
-    
-    // Reset regex lastIndex for each line
-    const regex = new RegExp(WIKILINK_PATTERN.source, 'g');
-    let match;
-    
-    while ((match = regex.exec(line)) !== null) {
-      const target = match[1]!;
-      
-      // Check if target exists
-      if (!allFiles.has(target) && !allFiles.has(basename(target))) {
-        const similarFiles = findSimilarFiles(target, allFiles);
-        
-        const staleIssue: AuditIssue = {
-          severity: 'warning',
-          code: 'stale-reference',
-          message: `Stale reference on line ${lineNumber}: '[[${target}]]' not found`,
-          value: match[0],
-          targetName: target,
-          autoFixable: false,
-          inBody: true,
-          lineNumber,
-        };
-        if (similarFiles.length > 0) {
-          staleIssue.similarFiles = similarFiles;
-        }
-        issues.push(staleIssue);
-      }
-    }
-  }
-  
-  return issues;
 }
 
 // ============================================================================

@@ -1230,7 +1230,9 @@ milestone: "[[Non Existent Milestone]]"
       expect(staleIssue.inBody).toBe(false);
     });
 
-    it('should detect stale reference in body content', async () => {
+    it('should NOT detect stale reference in body content (v1.0 scope is frontmatter only)', async () => {
+      // Body content link validation is deferred to v2.0
+      // Per product scope, v1.0 only validates frontmatter relation fields
       await writeFile(
         join(tempVaultDir, 'Ideas', 'Body Links.md'),
         `---
@@ -1245,14 +1247,10 @@ This idea references [[Non Existent Note]] which doesn't exist.
 
       const result = await runCLI(['audit', 'idea', '--output', 'json'], tempVaultDir);
 
+      // Should pass with no issues - body links are not validated in v1.0
+      expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      const ideaFile = output.files.find((f: { path: string }) => f.path.includes('Body Links.md'));
-      expect(ideaFile).toBeDefined();
-      const staleIssue = ideaFile.issues.find((i: { code: string }) => i.code === 'stale-reference');
-      expect(staleIssue).toBeDefined();
-      expect(staleIssue.targetName).toBe('Non Existent Note');
-      expect(staleIssue.inBody).toBe(true);
-      expect(staleIssue.lineNumber).toBeGreaterThan(0);
+      expect(output.files.length).toBe(0); // No files with issues
     });
 
     it('should not report stale reference for existing file', async () => {
@@ -1321,7 +1319,8 @@ milestone: "[[Q1 Relase]]"
       expect(staleIssue.similarFiles.some((f: string) => f.includes('Q1 Release'))).toBe(true);
     });
 
-    it('should handle multiple wikilinks in body content', async () => {
+    it('should NOT report body wikilinks even with multiple stale references (v1.0 scope)', async () => {
+      // Body content link validation is deferred to v2.0
       await writeFile(
         join(tempVaultDir, 'Ideas', 'Multiple Links.md'),
         `---
@@ -1337,16 +1336,14 @@ Second link: [[Missing Two]]
 
       const result = await runCLI(['audit', 'idea', '--output', 'json'], tempVaultDir);
 
+      // Should pass with no issues - body links are not validated in v1.0
+      expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      const ideaFile = output.files.find((f: { path: string }) => f.path.includes('Multiple Links.md'));
-      expect(ideaFile).toBeDefined();
-      const staleIssues = ideaFile.issues.filter((i: { code: string }) => i.code === 'stale-reference');
-      expect(staleIssues.length).toBe(2);
-      expect(staleIssues.some((i: { targetName: string }) => i.targetName === 'Missing One')).toBe(true);
-      expect(staleIssues.some((i: { targetName: string }) => i.targetName === 'Missing Two')).toBe(true);
+      expect(output.files.length).toBe(0);
     });
 
-    it('should handle wikilinks with aliases and headings', async () => {
+    it('should NOT report body wikilinks with aliases and headings (v1.0 scope)', async () => {
+      // Body content link validation is deferred to v2.0
       await writeFile(
         join(tempVaultDir, 'Ideas', 'Complex Links.md'),
         `---
@@ -1363,15 +1360,10 @@ Link with both: [[Missing Note#Section|Alias]]
 
       const result = await runCLI(['audit', 'idea', '--output', 'json'], tempVaultDir);
 
+      // Should pass with no issues - body links are not validated in v1.0
+      expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
-      const ideaFile = output.files.find((f: { path: string }) => f.path.includes('Complex Links.md'));
-      expect(ideaFile).toBeDefined();
-      const staleIssues = ideaFile.issues.filter((i: { code: string }) => i.code === 'stale-reference');
-      expect(staleIssues.length).toBe(3);
-      // All should target "Missing Note"
-      staleIssues.forEach((issue: { targetName: string }) => {
-        expect(issue.targetName).toBe('Missing Note');
-      });
+      expect(output.files.length).toBe(0);
     });
   });
 

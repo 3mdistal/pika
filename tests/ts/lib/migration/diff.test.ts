@@ -141,6 +141,88 @@ describe("diffSchemas", () => {
       expect(plan.nonDeterministic).toHaveLength(0);
     });
   });
+
+  describe("link format changes", () => {
+    it("should detect link_format change from wikilink to markdown", () => {
+      const oldSchema: BwrbSchemaType = {
+        ...baseSchema,
+        config: { link_format: "wikilink" },
+      };
+      const newSchema: BwrbSchemaType = {
+        ...baseSchema,
+        schemaVersion: "1.1.0",
+        config: { link_format: "markdown" },
+      };
+
+      const plan = diffSchemas(oldSchema, newSchema, "1.0.0", "1.1.0");
+
+      expect(plan.hasChanges).toBe(true);
+      expect(plan.deterministic).toContainEqual({
+        op: "normalize-links",
+        fromFormat: "wikilink",
+        toFormat: "markdown",
+      });
+    });
+
+    it("should detect link_format change from markdown to wikilink", () => {
+      const oldSchema: BwrbSchemaType = {
+        ...baseSchema,
+        config: { link_format: "markdown" },
+      };
+      const newSchema: BwrbSchemaType = {
+        ...baseSchema,
+        schemaVersion: "1.1.0",
+        config: { link_format: "wikilink" },
+      };
+
+      const plan = diffSchemas(oldSchema, newSchema, "1.0.0", "1.1.0");
+
+      expect(plan.hasChanges).toBe(true);
+      expect(plan.deterministic).toContainEqual({
+        op: "normalize-links",
+        fromFormat: "markdown",
+        toFormat: "wikilink",
+      });
+    });
+
+    it("should not generate normalize-links when link_format unchanged", () => {
+      const oldSchema: BwrbSchemaType = {
+        ...baseSchema,
+        config: { link_format: "wikilink" },
+      };
+      const newSchema: BwrbSchemaType = {
+        ...baseSchema,
+        config: { link_format: "wikilink" },
+      };
+
+      const plan = diffSchemas(oldSchema, newSchema, "1.0.0", "1.0.0");
+
+      // No normalize-links operation should be present
+      const normalizeOps = plan.deterministic.filter((op) => op.op === "normalize-links");
+      expect(normalizeOps).toHaveLength(0);
+    });
+
+    it("should default undefined link_format to wikilink", () => {
+      const oldSchema: BwrbSchemaType = {
+        ...baseSchema,
+        // No config.link_format - defaults to wikilink
+      };
+      const newSchema: BwrbSchemaType = {
+        ...baseSchema,
+        schemaVersion: "1.1.0",
+        config: { link_format: "markdown" },
+      };
+
+      const plan = diffSchemas(oldSchema, newSchema, "1.0.0", "1.1.0");
+
+      expect(plan.hasChanges).toBe(true);
+      expect(plan.deterministic).toContainEqual({
+        op: "normalize-links",
+        fromFormat: "wikilink",
+        toFormat: "markdown",
+      });
+    });
+  });
 });
 
 describe("suggestVersionBump", () => {
@@ -213,6 +295,21 @@ describe("formatDiffForDisplay", () => {
     expect(output).toContain("-");
     expect(output).toContain("status");
     expect(output).toContain("task");
+  });
+
+  it("should format normalize-links operation", () => {
+    const plan = {
+      fromVersion: "1.0.0",
+      toVersion: "1.1.0",
+      hasChanges: true,
+      deterministic: [{ op: "normalize-links" as const, fromFormat: "wikilink" as const, toFormat: "markdown" as const }],
+      nonDeterministic: [],
+    };
+
+    const output = formatDiffForDisplay(plan);
+    expect(output).toContain("Normalize");
+    expect(output).toContain("wikilink");
+    expect(output).toContain("markdown");
   });
 });
 
