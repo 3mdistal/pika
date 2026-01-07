@@ -4,6 +4,15 @@ All notable changes to Bowerbird are documented in this file.
 
 ## [Unreleased]
 
+### Changed (Breaking)
+
+- **Renamed "enum" terminology to "option" for consistency with schema model** (#179)
+  - Validation error type: `invalid_enum_value` → `invalid_option_value`
+  - Audit issue code: `invalid-enum` → `invalid-option`
+  - Export renamed: `suggestEnumValue()` → `suggestOptionValue()`
+  - Background: Global enums were replaced with inline `options` on fields in #165. This aligns error terminology with the current schema model.
+  - Migration: Scripts checking for `type: 'invalid_enum_value'` in JSON output should update to `type: 'invalid_option_value'`. Scripts using `--only invalid-enum` or `--ignore invalid-enum` should update to `invalid-option`.
+
 ### Documentation
 
 - **Complete command reference for all CLI commands** (#213)

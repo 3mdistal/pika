@@ -332,7 +332,7 @@ customField: value
     });
 
     it('should filter by --only issue type', async () => {
-      const result = await runCLI(['audit', 'idea', '--only', 'invalid-enum'], tempVaultDir);
+      const result = await runCLI(['audit', 'idea', '--only', 'invalid-option'], tempVaultDir);
 
       expect(result.stdout).toContain('Invalid status value');
       expect(result.stdout).not.toContain('Unknown field');
@@ -436,7 +436,7 @@ priority: medium
       const json = JSON.parse(result.stdout);
       const issue = json.files[0].issues[0];
       expect(issue.severity).toBe('error');
-      expect(issue.code).toBe('invalid-enum');
+      expect(issue.code).toBe('invalid-option');
       expect(issue.field).toBe('status');
       expect(issue.value).toBe('wip');
       expect(issue.expected).toContain('raw');

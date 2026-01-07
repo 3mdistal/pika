@@ -22,7 +22,7 @@ export type IssueCode =
   | 'orphan-file'
   | 'invalid-type'
   | 'missing-required'
-  | 'invalid-enum'
+  | 'invalid-option'
   | 'unknown-field'
   | 'wrong-directory'
   | 'type-mismatch'

@@ -9,7 +9,7 @@ import { expandStaticValue } from './local-date.js';
  */
 type ValidationErrorType =
   | 'required_field_missing'
-  | 'invalid_enum_value'
+  | 'invalid_option_value'
   | 'invalid_type'
   | 'unknown_field'
   | 'invalid_date'
@@ -87,9 +87,9 @@ export function validateFrontmatter(
       if (field.multiple && Array.isArray(value)) {
         for (const item of value) {
           if (!validOptions.includes(String(item))) {
-            const suggestion = suggestEnumValue(String(item), validOptions);
+            const suggestion = suggestOptionValue(String(item), validOptions);
             errors.push({
-              type: 'invalid_enum_value',
+              type: 'invalid_option_value',
               field: fieldName,
               value: item,
               message: `Invalid value for ${fieldName}: "${item}"`,
@@ -100,9 +100,9 @@ export function validateFrontmatter(
         }
       } else if (!Array.isArray(value) && !validOptions.includes(String(value))) {
         // Single-select validation
-        const suggestion = suggestEnumValue(String(value), validOptions);
+        const suggestion = suggestOptionValue(String(value), validOptions);
         errors.push({
-          type: 'invalid_enum_value',
+          type: 'invalid_option_value',
           field: fieldName,
           value,
           message: `Invalid value for ${fieldName}: "${value}"`,
@@ -332,9 +332,9 @@ function levenshteinDistance(a: string, b: string): number {
 }
 
 /**
- * Suggest a similar enum value using fuzzy matching.
+ * Suggest a similar option value using fuzzy matching.
  */
-export function suggestEnumValue(
+export function suggestOptionValue(
   value: string,
   allowed: string[]
 ): string | undefined {

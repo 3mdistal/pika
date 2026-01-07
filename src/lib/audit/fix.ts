@@ -66,7 +66,7 @@ async function applyFix(
         }
         break;
       }
-      case 'invalid-enum': {
+      case 'invalid-option': {
         if (issue.field && newValue !== undefined) {
           frontmatter[issue.field] = newValue;
         } else {
@@ -367,8 +367,8 @@ async function handleInteractiveFix(
       return handleOrphanFileFix(schema, result, issue);
     case 'missing-required':
       return handleMissingRequiredFix(schema, result, issue);
-    case 'invalid-enum':
-      return handleInvalidEnumFix(schema, result, issue);
+    case 'invalid-option':
+      return handleInvalidOptionFix(schema, result, issue);
     case 'unknown-field':
       return handleUnknownFieldFix(schema, result, issue);
     case 'format-violation':
@@ -531,7 +531,7 @@ async function handleMissingRequiredFix(
   return 'skipped';
 }
 
-async function handleInvalidEnumFix(
+async function handleInvalidOptionFix(
   schema: LoadedSchema,
   result: FileAuditResult,
   issue: AuditIssue
@@ -667,7 +667,7 @@ async function handleStaleReferenceFix(
     return 'skipped';
   } else if (selected === '[clear field]') {
     // Clear the field by setting it to empty
-    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-enum' }, '');
+    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, '');
     if (fixResult.action === 'fixed') {
       console.log(chalk.green(`    ✓ Cleared ${issue.field}`));
       return 'fixed';
@@ -677,7 +677,7 @@ async function handleStaleReferenceFix(
     }
   } else {
     // User selected a similar file
-    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-enum' }, selected);
+    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, selected);
     if (fixResult.action === 'fixed') {
       console.log(chalk.green(`    ✓ Updated ${issue.field}: ${selected}`));
       return 'fixed';
@@ -728,7 +728,7 @@ async function handleOwnedNoteReferencedFix(
     return 'quit';
   } else if (selected === '[clear reference]') {
     // Clear the field
-    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-enum' }, '');
+    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, '');
     if (fixResult.action === 'fixed') {
       console.log(chalk.green(`    ✓ Cleared ${issue.field}`));
       return 'fixed';
