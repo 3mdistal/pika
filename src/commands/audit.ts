@@ -65,6 +65,12 @@ Issue Types:
   format-violation  Field value doesn't match expected format (wikilink, etc.)
   stale-reference   Wikilink points to non-existent file
 
+Type Resolution:
+  Audit resolves each file's type from its frontmatter 'type' field.
+  If 'type' is missing or invalid, audit reports orphan-file/invalid-type
+  and skips type-dependent checks (missing-required, invalid-enum, etc.).
+  Use --type to filter by type; it does not fix missing type fields.
+
 Targeting Options:
   --type <type>     Filter by type (e.g., idea, objective/task)
   --path <glob>     Filter by file path pattern
