@@ -52,6 +52,14 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Added
 
+- **`--verbose` flag for `schema list` to show all types with fields inline** (#146)
+  - Shows complete schema overview with all types and their fields in a single view
+  - Displays inheritance relationships: `task (extends objective) -> Objectives/Tasks`
+  - Marks inherited fields with `(inherited)` annotation
+  - Shows required fields with `[required]` marker
+  - JSON mode: `--output json` returns structured data with `own_fields` and `inherited_fields` per type
+  - Replaces need to run `schema list type <name>` for each type individually
+
 - **`dashboard edit` command to modify existing dashboards** (#201)
   - `bwrb dashboard edit <name>` opens interactive editor with current values as defaults
   - `bwrb dashboard edit` (no args) shows picker to select dashboard
