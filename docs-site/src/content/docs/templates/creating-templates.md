@@ -71,9 +71,9 @@ Use date expressions for dynamic values that evaluate at note creation time:
 - `min` — minutes
 - `h` — hours
 - `d` — days
-- `w` — weeks
-- `mon` — months (30 days)
-- `y` — years (365 days)
+- `w` — weeks (7 days)
+- `mon` — months (fixed 30 days, not calendar months)
+- `y` — years (fixed 365 days, not calendar years)
 
 **Example:** Weekly review template with auto-deadline:
 
@@ -86,6 +86,20 @@ defaults:
   status: backlog
   deadline: "today() + '7d'"
 ---
+```
+
+### Value Precedence
+
+When creating a note, values are applied in this order (later values override earlier):
+
+1. **Schema defaults** — Base values from type definition
+2. **Template defaults** — Override schema defaults
+3. **JSON/CLI input** — Override everything (for automation)
+
+```bash
+# Template sets status: backlog, but JSON input overrides it
+bwrb new task --json '{"name": "My Task", "status": "in-flight"}'
+# Result: status is "in-flight", not "backlog"
 ```
 
 ## Variable Substitution
@@ -142,8 +156,15 @@ Templates use **strict matching**:
 ### Selection Precedence
 
 1. `--template name` — Uses `.bwrb/templates/{type}/name.md`
-2. `--no-template` — Skips templates entirely
+2. `--no-template` — Skips templates entirely, uses schema defaults only
 3. Default — Uses `.bwrb/templates/{type}/default.md` if it exists
+
+**Note:** `--no-template` takes precedence. If both flags are specified, templates are skipped:
+
+```bash
+bwrb new task --template bug-report --no-template
+# Result: no template used (--no-template wins)
+```
 
 ## Best Practices
 

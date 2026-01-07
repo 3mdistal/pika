@@ -70,6 +70,8 @@ When you run `bwrb new <type>`:
 2. **With `--no-template`** — Skips templates, uses schema defaults only
 3. **Without flags** — Uses `.bwrb/templates/{type}/default.md` if it exists
 
+If both `--template` and `--no-template` are specified, `--no-template` wins.
+
 Templates use **strict type matching**—no inheritance. A template for `task` won't be found when creating `objective/task` unless it's in the correct directory.
 
 ## Template Workflow Example
