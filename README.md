@@ -4,6 +4,8 @@ Short for **bowerbird**, pronounced "birb".
 
 Schema-driven note management for markdown vaults.
 
+> **Pre-release software.** bwrb is under active development. The CLI works and is usable, but the schema format and command surface may change before v1.0. See the [roadmap](https://github.com/3mdistal/bwrb/blob/main/docs/product/roadmap.md) for current status.
+
 ## Overview
 
 `bwrb` is a CLI tool that creates and edits markdown files based on a hierarchical type schema. It supports:
