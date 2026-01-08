@@ -249,6 +249,18 @@ bwrb template list [type] [name]   # List all, or show details if both provided
 4. **Dry-run default for destructive ops** — `--execute` to apply
 5. **Discoverable prompts** — Missing required info prompts, doesn't error
 
+### Help Output Ordering
+
+Commands in `bwrb --help` are ordered to reflect the product's priority model and guide users through a logical workflow:
+
+1. **CRUD operations** — `new`, `edit`, `delete` (core note actions)
+2. **Query operations** — `list`, `open`, `search` (discovery and navigation)
+3. **Schema and management** — `schema`, `audit`, `bulk`, `template` (schema enforcement and maintenance)
+4. **Saved queries** — `dashboard` (saved configurations, follows template conceptually)
+5. **Meta/utility** — `init`, `config`, `completion`, `help` (one-time setup and operational commands)
+
+This ordering presents commands as a guided path: create notes → find notes → maintain schema → automate → configure. Utility commands appear last to keep the core workflow prominent.
+
 ---
 
 ## Neovim Plugin

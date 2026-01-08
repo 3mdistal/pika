@@ -49,20 +49,29 @@ if (completionsIndex !== -1) {
     .option('-v, --vault <path>', 'Path to the vault directory')
     .enablePositionalOptions();
 
+  // CRUD operations
   program.addCommand(newCommand);
   program.addCommand(editCommand);
   program.addCommand(deleteCommand);
+
+  // Query operations
   program.addCommand(listCommand);
   program.addCommand(openCommand);
   program.addCommand(searchCommand);
+
+  // Schema and management
   program.addCommand(schemaCommand);
   program.addCommand(auditCommand);
   program.addCommand(bulkCommand);
   program.addCommand(templateCommand);
-  program.addCommand(completionCommand);
-  program.addCommand(configCommand);
+
+  // Saved queries
   program.addCommand(dashboardCommand);
+
+  // Meta/utility
   program.addCommand(initCommand);
+  program.addCommand(configCommand);
+  program.addCommand(completionCommand);
 
   program.parse();
 }
