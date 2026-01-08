@@ -98,9 +98,9 @@ jobs:
       - name: Verify PTY filter
         # Sanity check: ensure filter matches PTY tests and nothing else
         run: |
-          FILES=$(pnpm vitest list .pty.test.ts 2>&1 | grep -E "^tests/" | cut -d'>' -f1 | sort -u)
-          COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
-          NON_PTY=$(echo "$FILES" | grep -v ".pty.test.ts" | wc -l | tr -d ' ')
+          FILES=$(pnpm vitest list .pty.test.ts 2>&1 | grep -E "^tests/" | cut -d'>' -f1 | sort -u | grep -v '^$')
+          COUNT=$(echo "$FILES" | grep -c . || echo 0)
+          NON_PTY=$(echo "$FILES" | grep -v ".pty.test.ts" | grep -c . || echo 0)
           if [ "$COUNT" -eq 0 ]; then
             echo "ERROR: PTY filter matched no tests"
             exit 1
