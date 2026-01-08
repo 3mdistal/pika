@@ -723,6 +723,7 @@ function formatDate(date: Date, format: string): string {
  * Characters that are invalid in filenames across common filesystems.
  * Includes: / \ : * ? " < > | and control characters (0x00-0x1F)
  */
+// eslint-disable-next-line no-control-regex
 const INVALID_FILENAME_CHARS = /[/\\:*?"<>|\x00-\x1F]/g;
 
 /**
