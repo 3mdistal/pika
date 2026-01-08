@@ -4,7 +4,7 @@ Short for **bowerbird**, pronounced "birb".
 
 Schema-driven note management for markdown vaults.
 
-> **Pre-release software.** bwrb is under active development. The CLI works and is usable, but the schema format and command surface may change before v1.0. See the [roadmap](docs/product/roadmap.md) for current status.
+> **Pre-release software.** bwrb is under active development. The CLI works and is usable, but the schema format and command surface may change before v1.0. See the [roadmap](https://github.com/3mdistal/bwrb/blob/main/docs/product/roadmap.md) for current status.
 
 ## Overview
 
