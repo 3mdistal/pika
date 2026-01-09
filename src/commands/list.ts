@@ -5,6 +5,7 @@ import {
   getType,
   loadSchema,
   getTypeDefByPath,
+  getAllFieldsForType,
 } from '../lib/schema.js';
 import { extractWikilinkTarget } from '../lib/audit/types.js';
 
@@ -29,6 +30,7 @@ import {
   type TargetingOptions,
 } from '../lib/targeting.js';
 import { createDashboard, updateDashboard, getDashboard } from '../lib/dashboard.js';
+import { suggestFieldName } from '../lib/validation.js';
 
 /**
  * Resolve the output format from --output flag and deprecated flags.
@@ -245,6 +247,25 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
 
       const fields = options.fields?.split(',').map(f => f.trim());
       const depth = options.depth ? parseInt(options.depth, 10) : undefined;
+
+      // Validate --fields when --type is specified (strict mode)
+      if (targeting.type && fields && fields.length > 0) {
+        const allFieldNames = getAllFieldsForType(schema, targeting.type);
+        for (const field of fields) {
+          if (!allFieldNames.has(field)) {
+            const fieldList = Array.from(allFieldNames);
+            const suggestion = suggestFieldName(field, fieldList);
+            let msg = `Unknown field '${field}' for type '${targeting.type}'`;
+            if (suggestion) msg += `. Did you mean '${suggestion}'?`;
+            if (jsonMode) {
+              printJson(jsonError(msg));
+              process.exit(ExitCodes.VALIDATION_ERROR);
+            }
+            printError(msg);
+            process.exit(1);
+          }
+        }
+      }
 
       // Emit deprecation warnings for hierarchy flags (unless in JSON mode)
       if (!jsonMode) {

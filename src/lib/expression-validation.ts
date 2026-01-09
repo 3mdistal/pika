@@ -10,7 +10,7 @@ import type { Expression, BinaryExpression, UnaryExpression, CallExpression, Ide
 import { parseExpression } from './expression.js';
 import type { LoadedSchema, Field } from '../types/schema.js';
 import { getFieldsForType, getAllFieldsForType } from './schema.js';
-import { suggestOptionValue } from './validation.js';
+import { suggestOptionValue, suggestFieldName } from './validation.js';
 
 // ============================================================================
 // Types
@@ -219,8 +219,20 @@ export function validateWhereExpressions(
         // Skip if no literal value to validate
         if (comparison.value === null) continue;
 
-        // Skip if field is not in this type's schema
-        if (!allFieldNames.has(comparison.field)) continue;
+        // Error if field is not in this type's schema (strict mode when type is specified)
+        if (!allFieldNames.has(comparison.field)) {
+          const fieldList = Array.from(allFieldNames);
+          const suggestion = suggestFieldName(comparison.field, fieldList);
+          errors.push({
+            expression: exprString,
+            field: comparison.field,
+            value: comparison.value ?? '',
+            message: `Unknown field '${comparison.field}' for type '${typeName}'`,
+            validOptions: fieldList,
+            ...(suggestion && { suggestion }),
+          });
+          continue;
+        }
 
         // Get the field definition
         const field = fields[comparison.field];
