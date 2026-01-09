@@ -176,14 +176,29 @@ describe('expression-validation', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('skips validation for unknown fields', () => {
-      // unknown_field is not in the schema
+    it('errors on unknown fields', () => {
+      // unknown_field is not in the schema - should error in strict mode
       const result = validateWhereExpressions(
         ["unknown_field == 'value'"],
         schema,
         'task'
       );
-      expect(result.valid).toBe(true);
+      expect(result.valid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]!.field).toBe('unknown_field');
+      expect(result.errors[0]!.message).toContain('Unknown field');
+    });
+
+    it('suggests similar field names for typos in field names', () => {
+      // statsu is a typo for 'status'
+      const result = validateWhereExpressions(
+        ["statsu == 'backlog'"],
+        schema,
+        'task'
+      );
+      expect(result.valid).toBe(false);
+      expect(result.errors[0]!.field).toBe('statsu');
+      expect(result.errors[0]!.suggestion).toBe('status');
     });
 
     it('validates multiple expressions', () => {

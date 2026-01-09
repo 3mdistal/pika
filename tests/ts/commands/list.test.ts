@@ -178,6 +178,39 @@ describe('list command', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Ideas/');
     });
+
+    it('should error on unknown field in --fields when type specified', async () => {
+      const result = await runCLI(['list', '--type', 'idea', '--fields', 'unknown_field'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Unknown field 'unknown_field' for type 'idea'");
+    });
+
+    it('should suggest similar field names for typos in --fields', async () => {
+      // statsu is a typo for 'status'
+      const result = await runCLI(['list', '--type', 'idea', '--fields', 'statsu'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("Unknown field 'statsu'");
+      expect(result.stderr).toContain("Did you mean 'status'?");
+    });
+
+    it('should allow unknown fields in --fields without --type (permissive mode)', async () => {
+      const result = await runCLI(['list', '--fields', 'unknown_field'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      // Should work in permissive mode, showing table with the field (even if empty)
+      expect(result.stdout).toContain('UNKNOWN_FIELD');
+    });
+
+    it('should show field validation error in JSON mode', async () => {
+      const result = await runCLI(['list', '--type', 'idea', '--fields', 'unknown_field', '--output', 'json'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      const json = JSON.parse(result.stdout);
+      expect(json.success).toBe(false);
+      expect(json.error).toContain("Unknown field 'unknown_field'");
+    });
   });
 
   describe('--where filters', () => {
