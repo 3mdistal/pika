@@ -443,6 +443,25 @@ export function getConcreteTypeNames(schema: LoadedSchema): string[] {
 }
 
 /**
+ * Get all unique field names defined directly on any type (own fields only).
+ * This returns field names that can be edited/deleted in the schema.
+ * Does not include inherited fields - only fields defined directly on types.
+ */
+export function getAllOwnFieldNames(schema: LoadedSchema): string[] {
+  const fieldNames = new Set<string>();
+  
+  for (const typeDef of Object.values(schema.raw.types)) {
+    if (typeDef.fields) {
+      for (const fieldName of Object.keys(typeDef.fields)) {
+        fieldNames.add(fieldName);
+      }
+    }
+  }
+  
+  return Array.from(fieldNames);
+}
+
+/**
  * Get descendant type names for a type (all children, grandchildren, etc.).
  */
 export function getDescendants(schema: LoadedSchema, typeName: string): string[] {

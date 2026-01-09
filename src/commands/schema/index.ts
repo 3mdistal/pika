@@ -15,7 +15,8 @@ import { listCommand } from './list.js';
 import { registerNewTypeCommand, registerEditTypeCommand, registerDeleteTypeCommand } from './type.js';
 import { registerNewFieldCommand, registerEditFieldCommand, registerDeleteFieldCommand } from './field.js';
 import { registerMigrationCommands } from './migrate.js';
-import { promptSchemaEntityType } from './helpers/pickers.js';
+import { promptSchemaEntityType, inferSchemaEntity, getTypesWithOwnField } from './helpers/pickers.js';
+import { promptSelection } from '../../lib/prompt.js';
 
 // ============================================================================
 // Main Schema Command
@@ -137,32 +138,100 @@ schemaCommand.addCommand(newCommand);
 
 const editCommand = new Command('edit')
   .description('Edit an existing type or field')
+  .argument('[name]', 'Name to edit (infers type vs field from schema)')
   .addHelpText('after', `
 Examples:
   bwrb schema edit                   # Prompts for what to edit
+  bwrb schema edit task              # Infers "task" is a type, edits it
+  bwrb schema edit status            # Infers "status" is a field, prompts for type
   bwrb schema edit type              # Edit a type (shows picker)
   bwrb schema edit type task         # Edit the "task" type
   bwrb schema edit field             # Edit a field (shows pickers)
   bwrb schema edit field task status # Edit "status" field on "task" type`);
 
-// schema edit (no args - prompt for entity type)
+// schema edit [name] - infers type vs field from name, or prompts if no name
 editCommand
-  .action(async (options: EditCommandOptions, _cmd: Command) => {
+  .action(async (name: string | undefined, options: EditCommandOptions, cmd: Command) => {
     const jsonMode = options.output === 'json';
 
     try {
-      if (jsonMode) {
-        throw new Error('Entity type argument is required in JSON mode. Use: schema edit type|field');
+      // If no name provided, prompt for entity type (original behavior)
+      if (!name) {
+        if (jsonMode) {
+          throw new Error('Entity type argument is required in JSON mode. Use: schema edit type|field');
+        }
+
+        const entityType = await promptSchemaEntityType('edit');
+        if (entityType === null) {
+          process.exit(0);
+        }
+
+        // Re-invoke the appropriate subcommand
+        const args = [entityType];
+        await editCommand.parseAsync(args, { from: 'user' });
+        return;
       }
 
-      const entityType = await promptSchemaEntityType('edit');
-      if (entityType === null) {
-        process.exit(0);
+      // Name provided - check if it's a subcommand (type/field) first
+      if (name === 'type' || name === 'field') {
+        // Let Commander handle the subcommand
+        return;
       }
 
-      // Re-invoke the appropriate subcommand
-      const args = [entityType];
-      await editCommand.parseAsync(args, { from: 'user' });
+      // Try to infer what the name refers to
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultDir = resolveVaultDir(globalOpts);
+      const schema = await loadSchema(vaultDir);
+      const match = inferSchemaEntity(schema, name);
+
+      switch (match.kind) {
+        case 'type':
+          // Route to: schema edit type <name>
+          await editCommand.parseAsync(['type', name], { from: 'user' });
+          break;
+
+        case 'field': {
+          // Find types that have this field
+          const typesWithField = getTypesWithOwnField(schema, name);
+          
+          if (typesWithField.length === 0) {
+            // Shouldn't happen since inferSchemaEntity found it, but handle gracefully
+            throw new Error(`Field '${name}' not found in any type`);
+          }
+          
+          let targetType: string;
+          if (typesWithField.length === 1) {
+            // Only one type has this field - use it directly
+            targetType = typesWithField[0]!;
+          } else {
+            // Multiple types have this field - prompt user to select
+            const selected = await promptSelection(
+              `Multiple types have '${name}'. Select type to edit:`,
+              typesWithField
+            );
+            if (selected === null) {
+              process.exit(0);
+            }
+            targetType = selected;
+          }
+          
+          // Route to: schema edit field <type> <field>
+          await editCommand.parseAsync(['field', targetType, name], { from: 'user' });
+          break;
+        }
+
+        case 'both':
+          throw new Error(
+            `Ambiguous: '${name}' exists as both a type and a field.\n` +
+            `Use 'bwrb schema edit type ${name}' or 'bwrb schema edit field ${name}'`
+          );
+
+        case 'none':
+          throw new Error(
+            `'${name}' is not a known type or field name.\n` +
+            `Run 'bwrb schema list' to see available types and fields.`
+          );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
@@ -184,33 +253,104 @@ schemaCommand.addCommand(editCommand);
 
 const deleteCommand = new Command('delete')
   .description('Delete a type or field (dry-run by default)')
+  .argument('[name]', 'Name to delete (infers type vs field from schema)')
   .addHelpText('after', `
 Examples:
   bwrb schema delete                      # Prompts for what to delete
+  bwrb schema delete task                 # Infers "task" is a type, deletes it
+  bwrb schema delete status               # Infers "status" is a field, prompts for type
   bwrb schema delete type                 # Delete a type (shows picker, dry-run)
   bwrb schema delete type project         # Preview deleting "project" type
   bwrb schema delete type project --execute  # Actually delete "project" type
   bwrb schema delete field                # Delete a field (shows pickers)
   bwrb schema delete field task status    # Preview deleting "status" from "task"`);
 
-// schema delete (no args - prompt for entity type)
+// schema delete [name] - infers type vs field from name, or prompts if no name
 deleteCommand
-  .action(async (options: DeleteCommandOptions, _cmd: Command) => {
+  .action(async (name: string | undefined, options: DeleteCommandOptions, cmd: Command) => {
     const jsonMode = options.output === 'json';
 
     try {
-      if (jsonMode) {
-        throw new Error('Entity type argument is required in JSON mode. Use: schema delete type|field');
+      // If no name provided, prompt for entity type (original behavior)
+      if (!name) {
+        if (jsonMode) {
+          throw new Error('Entity type argument is required in JSON mode. Use: schema delete type|field');
+        }
+
+        const entityType = await promptSchemaEntityType('delete');
+        if (entityType === null) {
+          process.exit(0);
+        }
+
+        // Re-invoke the appropriate subcommand
+        const args = [entityType];
+        await deleteCommand.parseAsync(args, { from: 'user' });
+        return;
       }
 
-      const entityType = await promptSchemaEntityType('delete');
-      if (entityType === null) {
-        process.exit(0);
+      // Name provided - check if it's a subcommand (type/field) first
+      if (name === 'type' || name === 'field') {
+        // Let Commander handle the subcommand
+        return;
       }
 
-      // Re-invoke the appropriate subcommand
-      const args = [entityType];
-      await deleteCommand.parseAsync(args, { from: 'user' });
+      // Try to infer what the name refers to
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultDir = resolveVaultDir(globalOpts);
+      const schema = await loadSchema(vaultDir);
+      const match = inferSchemaEntity(schema, name);
+
+      switch (match.kind) {
+        case 'type':
+          // Route to: schema delete type <name>
+          await deleteCommand.parseAsync(['type', name], { from: 'user' });
+          break;
+
+        case 'field': {
+          // Find types that have this field
+          const typesWithField = getTypesWithOwnField(schema, name);
+          
+          if (typesWithField.length === 0) {
+            throw new Error(`Field '${name}' not found in any type`);
+          }
+          
+          let targetType: string;
+          if (typesWithField.length === 1) {
+            targetType = typesWithField[0]!;
+          } else {
+            if (jsonMode) {
+              throw new Error(
+                `Field '${name}' exists on multiple types: ${typesWithField.join(', ')}. ` +
+                `Specify the type explicitly: schema delete field <type> ${name}`
+              );
+            }
+            const selected = await promptSelection(
+              `Multiple types have '${name}'. Select type to delete from:`,
+              typesWithField
+            );
+            if (selected === null) {
+              process.exit(0);
+            }
+            targetType = selected;
+          }
+          
+          // Route to: schema delete field <type> <field>
+          await deleteCommand.parseAsync(['field', targetType, name], { from: 'user' });
+          break;
+        }
+
+        case 'both':
+          throw new Error(
+            `Ambiguous: '${name}' exists as both a type and a field.\n` +
+            `Use 'bwrb schema delete type ${name}' or 'bwrb schema delete field ${name}'`
+          );
+
+        case 'none':
+          throw new Error(
+            `'${name}' is not a known type or field name.\n` +
+            `Run 'bwrb schema list' to see available types and fields.`
+          );
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {

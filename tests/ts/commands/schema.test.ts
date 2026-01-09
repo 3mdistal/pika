@@ -799,6 +799,132 @@ describe('schema command', () => {
   });
 
   // ============================================
+  // NAME INFERENCE FOR EDIT/DELETE (Issue #241)
+  // ============================================
+
+  describe('schema edit name inference', () => {
+    it('should error with helpful message for unknown name', async () => {
+      const result = await runCLI(['schema', 'edit', 'nonexistent'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("'nonexistent' is not a known type or field name");
+      expect(result.stderr).toContain('schema list');
+    });
+
+    it('should error with disambiguation message when name matches both type and field', async () => {
+      // Create a schema where 'status' is both a type name and a field name
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-ambiguous-'));
+      await mkdir(join(tempVaultDir, '.bwrb'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            status: {
+              output_dir: 'Statuses',
+              fields: { value: { prompt: 'text' } }
+            },
+            task: {
+              fields: { status: { prompt: 'select', options: ['raw', 'done'] } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'edit', 'status'], tempVaultDir);
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('Ambiguous');
+        expect(result.stderr).toContain("'status' exists as both a type and a field");
+        expect(result.stderr).toContain('schema edit type status');
+        expect(result.stderr).toContain('schema edit field status');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should still work with explicit type/field subcommands', async () => {
+      // schema edit type task should still work
+      // Note: This is interactive, so we test that it doesn't error immediately
+      // The actual edit flow would require PTY tests
+      const result = await runCLI(['schema', 'edit', 'type', 'nonexistent'], vaultDir);
+      
+      expect(result.exitCode).toBe(1);
+      // Should error with "type does not exist" not "unknown name"
+      expect(result.stderr).toContain('does not exist');
+    });
+  });
+
+  describe('schema delete name inference', () => {
+    it('should infer type deletion for known type name (dry-run)', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-delete-infer-'));
+      await mkdir(join(tempVaultDir, '.bwrb'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            meta: {},
+            task: { extends: 'meta', output_dir: 'Tasks' }
+          }
+        })
+      );
+
+      try {
+        // schema delete task should infer it's a type
+        const result = await runCLI(['schema', 'delete', 'task'], tempVaultDir);
+
+        expect(result.exitCode).toBe(0);
+        // Should show dry-run for type deletion
+        expect(result.stdout).toContain('Dry run');
+        expect(result.stdout).toContain('delete type');
+        expect(result.stdout).toContain('task');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should error with helpful message for unknown name', async () => {
+      const result = await runCLI(['schema', 'delete', 'nonexistent'], vaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("'nonexistent' is not a known type or field name");
+    });
+
+    it('should error with disambiguation message when name is ambiguous', async () => {
+      const tempVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-delete-ambig-'));
+      await mkdir(join(tempVaultDir, '.bwrb'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify({
+          version: 2,
+          types: {
+            status: {
+              output_dir: 'Statuses',
+              fields: { value: { prompt: 'text' } }
+            },
+            task: {
+              fields: { status: { prompt: 'select', options: ['raw', 'done'] } }
+            }
+          }
+        })
+      );
+
+      try {
+        const result = await runCLI(['schema', 'delete', 'status'], tempVaultDir);
+
+        expect(result.exitCode).toBe(1);
+        expect(result.stderr).toContain('Ambiguous');
+        expect(result.stderr).toContain('schema delete type status');
+        expect(result.stderr).toContain('schema delete field status');
+      } finally {
+        await rm(tempVaultDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  // ============================================
   // GLOBAL OPTIONS REGRESSION TESTS
   // ============================================
 
