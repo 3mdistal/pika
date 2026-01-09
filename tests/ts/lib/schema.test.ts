@@ -21,6 +21,7 @@ import {
   resolveSourceType,
   getFieldsByOrigin,
   getFieldOrderForOrigin,
+  getAllOwnFieldNames,
 } from '../../../src/lib/schema.js';
 import { createTestVault, cleanupTestVault, TEST_SCHEMA } from '../fixtures/setup.js';
 import type { LoadedSchema } from '../../../src/types/schema.js';
@@ -764,6 +765,95 @@ describe('schema', () => {
     it('should return fields as-is for unknown type', () => {
       const order = getFieldOrderForOrigin(schema, 'nonexistent', ['a', 'b', 'c']);
       expect(order).toEqual(['a', 'b', 'c']);
+    });
+  });
+
+  describe('getAllOwnFieldNames', () => {
+    it('should return unique field names across all types', () => {
+      // The test schema has fields like status, priority, milestone, deadline, tags, etc.
+      const fieldNames = getAllOwnFieldNames(schema);
+      
+      expect(fieldNames).toContain('status');
+      expect(fieldNames).toContain('priority');
+      expect(fieldNames).toContain('milestone');
+      expect(fieldNames).toContain('deadline');
+      expect(fieldNames).toContain('tags');
+    });
+
+    it('should not include duplicate field names', () => {
+      // 'status' exists on multiple types but should appear only once
+      const fieldNames = getAllOwnFieldNames(schema);
+      const statusCount = fieldNames.filter(f => f === 'status').length;
+      expect(statusCount).toBe(1);
+    });
+
+    it('should only include own fields, not inherited', async () => {
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'bwrb-ownfields-test-'));
+      try {
+        await mkdir(join(tempDir, '.bwrb'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.bwrb/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              meta: {
+                fields: {
+                  created: { prompt: 'date' }
+                }
+              },
+              task: {
+                extends: 'meta',
+                fields: {
+                  status: { prompt: 'text' }
+                }
+                // task inherits 'created' but only defines 'status'
+              }
+            }
+          })
+        );
+
+        const testSchema = await loadSchema(tempDir);
+        const fieldNames = getAllOwnFieldNames(testSchema);
+        
+        // Should include fields defined on meta and task
+        expect(fieldNames).toContain('created');
+        expect(fieldNames).toContain('status');
+        // But not duplicated
+        expect(fieldNames.length).toBe(2);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should return empty array for schema with no fields', async () => {
+      const { mkdtemp, writeFile, mkdir, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const { join } = await import('path');
+
+      const tempDir = await mkdtemp(join(tmpdir(), 'bwrb-nofields-test-'));
+      try {
+        await mkdir(join(tempDir, '.bwrb'), { recursive: true });
+        await writeFile(
+          join(tempDir, '.bwrb/schema.json'),
+          JSON.stringify({
+            version: 2,
+            types: {
+              empty: {}
+            }
+          })
+        );
+
+        const emptySchema = await loadSchema(tempDir);
+        const fieldNames = getAllOwnFieldNames(emptySchema);
+        
+        expect(fieldNames).toEqual([]);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
     });
   });
 });
