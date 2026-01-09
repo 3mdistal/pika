@@ -329,6 +329,11 @@ Hint: Bulk operations require explicit targeting to prevent accidents.
         });
       }
 
+      // Note: We intentionally do NOT validate field names for mutation operations
+      // (--set, --delete, --append, --remove). Users may want to set arbitrary
+      // custom fields not defined in the schema. Field validation is enforced
+      // for --where expressions (filtering) where typos cause silent bugs.
+
       // Check for validation errors
       if (validationErrors.length > 0) {
         if (jsonMode) {
