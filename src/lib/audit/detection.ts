@@ -122,10 +122,10 @@ export async function runAudit(
   }
 
   // Build set of all markdown files for stale reference checking
-  const allFiles = await collectAllMarkdownFilenames(vaultDir);
+  const allFiles = await collectAllMarkdownFilenames(schema, vaultDir);
 
   // Build map from note names to relative paths for ownership checking
-  const notePathMap = await buildNotePathMap(vaultDir);
+  const notePathMap = await buildNotePathMap(schema, vaultDir);
 
   // Build ownership index for ownership violation checking
   const ownershipIndex = await buildOwnershipIndex(schema, vaultDir);
