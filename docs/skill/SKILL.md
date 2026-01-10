@@ -191,9 +191,15 @@ bwrb audit --type task
 # JSON output for parsing issues
 bwrb audit --output json
 
-# Auto-fix issues (interactive repair)
+# Fix issues (dry-run by default)
+# Preview interactive fixes (no writes)
 bwrb audit --fix
-bwrb audit --fix --auto  # Auto-apply unambiguous fixes
+# Apply interactive fixes (writes files)
+bwrb audit --fix --execute
+# Preview auto-fixes (no writes)
+bwrb audit --fix --auto
+# Apply auto-fixes (writes files)
+bwrb audit --fix --auto --execute
 ```
 
 #### Type Inference and Check Dependencies

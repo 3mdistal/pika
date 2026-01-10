@@ -15,7 +15,9 @@ import {
   getTypeFamilies,
   getDescendants,
 } from '../schema.js';
-import { parseNote } from '../frontmatter.js';
+import { readStructuralFrontmatter } from './structural.js';
+import { isMap } from 'yaml';
+import { isDeepStrictEqual } from 'node:util';
 import { suggestOptionValue, suggestFieldName } from '../validation.js';
 import { applyFrontmatterFilters } from '../query.js';
 import { searchContent } from '../content-search.js';
@@ -83,7 +85,7 @@ export async function runAudit(
     const filesWithFrontmatter = await Promise.all(
       filteredFiles.map(async (f) => {
         try {
-          const { frontmatter } = await parseNote(f.path);
+          const { frontmatter } = await readStructuralFrontmatter(f.path);
           return { path: f.path, frontmatter, _managedFile: f };
         } catch {
           return { path: f.path, frontmatter: {}, _managedFile: f };
@@ -183,19 +185,30 @@ export async function auditFile(
 ): Promise<AuditIssue[]> {
   const issues: AuditIssue[] = [];
 
-  let frontmatter: Record<string, unknown>;
-  try {
-    const parsed = await parseNote(file.path);
-    frontmatter = parsed.frontmatter;
-  } catch {
+  const structural = await readStructuralFrontmatter(file.path);
+
+  // Treat YAML parse errors as fatal unless they are only duplicate-key errors
+  // (duplicate-key errors are handled as Phase 4 structural issues).
+  const fatalYamlErrors = structural.yamlErrors.filter(
+    (e) => !e.startsWith('Map keys must be unique')
+  );
+
+  if (structural.yaml !== null && (structural.doc === null || fatalYamlErrors.length > 0)) {
     issues.push({
       severity: 'error',
       code: 'orphan-file',
-      message: 'Failed to parse frontmatter',
+      message: fatalYamlErrors.length > 0
+        ? `Failed to parse frontmatter: ${fatalYamlErrors[0]}`
+        : 'Failed to parse frontmatter',
       autoFixable: false,
     });
     return issues;
   }
+
+  const frontmatter: Record<string, unknown> = structural.frontmatter;
+
+  // Phase 4: Structural integrity issues
+  issues.push(...collectStructuralIssues(structural, frontmatter));
 
   // Check for type field
   const typeValue = frontmatter['type'];
@@ -411,6 +424,144 @@ export async function auditFile(
   // Check for hygiene issues in all frontmatter values
   const hygieneIssues = checkHygieneIssues(frontmatter, fields, fieldNames);
   issues.push(...hygieneIssues);
+
+  return issues;
+}
+
+function isEffectivelyEmpty(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === 'string' && value.trim().length === 0) return true;
+  if (Array.isArray(value) && value.length === 0) return true;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.keys(value as Record<string, unknown>).length === 0;
+  }
+  return false;
+}
+
+function repairNearWikilink(trimmed: string): string | null {
+  if (trimmed.startsWith('[[') && trimmed.endsWith(']') && !trimmed.endsWith(']]')) {
+    return `${trimmed}]`;
+  }
+
+  if (trimmed.startsWith('[') && !trimmed.startsWith('[[') && trimmed.endsWith(']]')) {
+    return `[${trimmed}`;
+  }
+
+  return null;
+}
+
+function collectStructuralIssues(
+  structural: Awaited<ReturnType<typeof readStructuralFrontmatter>>,
+  frontmatter: Record<string, unknown>
+): AuditIssue[] {
+  const issues: AuditIssue[] = [];
+
+  // frontmatter-not-at-top
+  if (structural.primaryBlock && !structural.atTop) {
+    const autoFixable =
+      structural.blocks.length === 1 &&
+      !structural.unterminated &&
+      structural.yamlErrors.length === 0;
+
+    issues.push({
+      severity: 'error',
+      code: 'frontmatter-not-at-top',
+      message: autoFixable
+        ? 'Frontmatter is not at the top of the file'
+        : 'Frontmatter is not at the top of the file (ambiguous; not auto-fixable)',
+      autoFixable,
+    });
+  }
+
+  // duplicate-frontmatter-keys
+  if (structural.doc && isMap(structural.doc.contents)) {
+    const map = structural.doc.contents;
+    const groups = new Map<string, any[]>();
+
+    for (const pair of map.items as any[]) {
+      const key = String((pair.key as any)?.value ?? '');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(pair);
+    }
+
+    for (const [key, pairs] of groups.entries()) {
+      if (!key || pairs.length < 2) continue;
+
+      const values = pairs.map((p: any) => (p.value ? p.value.toJSON() : null));
+      const nonEmptyValues = values.filter((v: unknown) => !isEffectivelyEmpty(v));
+
+      let autoFixable = false;
+      if (nonEmptyValues.length === 0) {
+        autoFixable = true;
+      } else {
+        const uniqueNonEmpty: unknown[] = [];
+        for (const v of nonEmptyValues) {
+          if (!uniqueNonEmpty.some((u) => isDeepStrictEqual(u, v))) {
+            uniqueNonEmpty.push(v);
+          }
+        }
+        // Auto-merge when all non-empty values are effectively the same.
+        autoFixable = uniqueNonEmpty.length === 1;
+      }
+
+      issues.push({
+        severity: 'error',
+        code: 'duplicate-frontmatter-keys',
+        message: `Duplicate frontmatter key: ${key}`,
+        field: key,
+        autoFixable,
+        duplicateKey: key,
+        duplicateCount: pairs.length,
+      });
+    }
+  }
+
+  // malformed-wikilink (frontmatter-only)
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (typeof value === 'string') {
+      const inner = value.trim();
+      const repaired = repairNearWikilink(inner);
+      if (repaired) {
+        const leading = value.match(/^\s*/)?.[0] ?? '';
+        const trailing = value.match(/\s*$/)?.[0] ?? '';
+        const fixedValue = `${leading}${repaired}${trailing}`;
+        issues.push({
+          severity: 'error',
+          code: 'malformed-wikilink',
+          message: `Malformed wikilink in frontmatter: ${key}`,
+          field: key,
+          value,
+          fixedValue,
+          autoFixable: true,
+        });
+      }
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        const item = value[i];
+        if (typeof item !== 'string') continue;
+        const inner = item.trim();
+        const repaired = repairNearWikilink(inner);
+        if (!repaired) continue;
+
+        const leading = item.match(/^\s*/)?.[0] ?? '';
+        const trailing = item.match(/\s*$/)?.[0] ?? '';
+        const fixedValue = `${leading}${repaired}${trailing}`;
+        issues.push({
+          severity: 'error',
+          code: 'malformed-wikilink',
+          message: `Malformed wikilink in frontmatter list: ${key}[${i}]`,
+          field: key,
+          value: item,
+          fixedValue,
+          listIndex: i,
+          autoFixable: true,
+        });
+      }
+    }
+  }
 
   return issues;
 }
@@ -736,7 +887,7 @@ async function buildParentMap(
   
   for (const file of files) {
     try {
-      const { frontmatter } = await parseNote(file.path);
+      const { frontmatter } = await readStructuralFrontmatter(file.path);
       const typePath = resolveTypeFromFrontmatter(schema, frontmatter);
       if (!typePath) continue;
       
