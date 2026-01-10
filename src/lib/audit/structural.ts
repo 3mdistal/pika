@@ -81,7 +81,7 @@ function splitLinesWithOffsets(raw: string): Array<{ start: number; end: number;
   return lines;
 }
 
-export function findFrontmatterBlocks(raw: string): { blocks: FrontmatterBlock[]; unterminated: boolean } {
+function findFrontmatterBlocks(raw: string): { blocks: FrontmatterBlock[]; unterminated: boolean } {
   const blocks: FrontmatterBlock[] = [];
   const lines = splitLinesWithOffsets(raw);
 
