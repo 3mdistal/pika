@@ -5,7 +5,12 @@
  */
 
 import chalk from 'chalk';
+import { readFile, writeFile } from 'fs/promises';
 import { join, dirname, basename } from 'path';
+import { parseDocument, isMap, isSeq } from 'yaml';
+import type { YAMLSeq } from 'yaml';
+import { isDeepStrictEqual } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   getType,
   getFieldsForType,
@@ -38,6 +43,14 @@ import {
   toWikilink,
   toMarkdownLink,
 } from './types.js';
+import {
+  readStructuralFrontmatterFromRaw,
+  movePrimaryBlockToTop,
+  replacePrimaryYaml,
+  getAllPairsForKey,
+  getLastPairForKey,
+  getStringSequenceItem,
+} from './structural.js';
 
 // ============================================================================
 // Helpers
@@ -48,9 +61,92 @@ import {
  */
 function isEmpty(value: unknown): boolean {
   if (value === null || value === undefined) return true;
-  if (value === '') return true;
+  if (typeof value === 'string' && value.trim().length === 0) return true;
   if (Array.isArray(value) && value.length === 0) return true;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.keys(value as Record<string, unknown>).length === 0;
+  }
   return false;
+}
+
+const executeStorage = new AsyncLocalStorage<boolean>();
+
+function isExecuteEnabled(): boolean {
+  return executeStorage.getStore() ?? false;
+}
+
+function executeRequiredResult(filePath: string, issue: AuditIssue): FixResult {
+  return { file: filePath, issue, action: 'skipped', message: 'Use --execute to write changes' };
+}
+
+type RawLine = {
+  text: string;
+  eol: string;
+};
+
+function splitLinesPreserveEol(input: string): RawLine[] {
+  const lines: RawLine[] = [];
+  let start = 0;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (ch !== '\n' && ch !== '\r') continue;
+
+    const eolStart = i;
+    let eol = ch;
+    if (ch === '\r' && input[i + 1] === '\n') {
+      eol = '\r\n';
+      i++;
+    }
+
+    lines.push({
+      text: input.slice(start, eolStart),
+      eol,
+    });
+
+    start = i + 1;
+  }
+
+  lines.push({
+    text: input.slice(start),
+    eol: '',
+  });
+
+  return lines;
+}
+
+async function applyTrailingWhitespaceFix(filePath: string, issue: AuditIssue): Promise<FixResult> {
+  if (!isExecuteEnabled()) {
+    return executeRequiredResult(filePath, issue);
+  }
+
+  const lineNumber = issue.lineNumber;
+  if (!lineNumber || lineNumber <= 0) {
+    return { file: filePath, issue, action: 'failed', message: 'No line number for whitespace fix' };
+  }
+
+  const content = await readFile(filePath, 'utf-8');
+  const lines = splitLinesPreserveEol(content);
+
+  const index = lineNumber - 1;
+  if (index < 0 || index >= lines.length) {
+    return { file: filePath, issue, action: 'failed', message: `Line ${lineNumber} out of range` };
+  }
+
+  const current = lines[index]!;
+  if (!/[ \t]+$/.test(current.text)) {
+    return { file: filePath, issue, action: 'skipped', message: 'No trailing whitespace found' };
+  }
+
+  lines[index] = {
+    ...current,
+    text: current.text.replace(/[ \t]+$/, ''),
+  };
+
+  const updated = lines.map((l) => l.text + l.eol).join('');
+  await writeFile(filePath, updated, 'utf-8');
+
+  return { file: filePath, issue, action: 'fixed' };
 }
 
 // ============================================================================
@@ -67,6 +163,19 @@ async function applyFix(
   newValue?: unknown
 ): Promise<FixResult> {
   try {
+    // Phase 4 structural fixes operate on raw content.
+    if (issue.code === 'frontmatter-not-at-top' || issue.code === 'duplicate-frontmatter-keys' || issue.code === 'malformed-wikilink') {
+      return await applyStructuralFix(filePath, issue, newValue);
+    }
+
+    if (issue.code === 'trailing-whitespace') {
+      return await applyTrailingWhitespaceFix(filePath, issue);
+    }
+
+    if (!isExecuteEnabled()) {
+      return executeRequiredResult(filePath, issue);
+    }
+
     const parsed = await parseNote(filePath);
     const frontmatter = { ...parsed.frontmatter };
 
@@ -128,14 +237,6 @@ async function applyFix(
         break;
       }
       // Phase 2: Low-risk hygiene fixes
-      case 'trailing-whitespace': {
-        if (issue.field && typeof frontmatter[issue.field] === 'string') {
-          frontmatter[issue.field] = (frontmatter[issue.field] as string).trim();
-        } else {
-          return { file: filePath, issue, action: 'failed', message: 'Cannot trim non-string value' };
-        }
-        break;
-      }
       case 'invalid-boolean-coercion': {
         if (issue.field && typeof frontmatter[issue.field] === 'string') {
           const strValue = (frontmatter[issue.field] as string).toLowerCase();
@@ -214,6 +315,169 @@ async function applyFix(
   }
 }
 
+async function applyStructuralFix(
+  filePath: string,
+  issue: AuditIssue,
+  newValue?: unknown
+): Promise<FixResult> {
+  if (!isExecuteEnabled()) {
+    return executeRequiredResult(filePath, issue);
+  }
+
+  const raw = await readFile(filePath, 'utf-8');
+  const structural = readStructuralFrontmatterFromRaw(raw);
+  const block = structural.primaryBlock;
+
+  if (!block || structural.yaml === null) {
+    return { file: filePath, issue, action: 'failed', message: 'No frontmatter block found' };
+  }
+
+  switch (issue.code) {
+    case 'frontmatter-not-at-top': {
+      const eligible =
+        !structural.atTop &&
+        structural.blocks.length === 1 &&
+        !structural.unterminated &&
+        structural.yamlErrors.length === 0;
+
+      if (!eligible) {
+        return { file: filePath, issue, action: 'skipped', message: 'Ambiguous frontmatter; manual fix required' };
+      }
+
+      const updated = movePrimaryBlockToTop(raw, block);
+      await writeFile(filePath, updated, 'utf-8');
+      return { file: filePath, issue, action: 'fixed' };
+    }
+
+    case 'duplicate-frontmatter-keys': {
+      const key = issue.duplicateKey ?? issue.field;
+      if (!key) {
+        return { file: filePath, issue, action: 'failed', message: 'No duplicate key specified' };
+      }
+
+      const doc = parseDocument(structural.yaml);
+      if (!isMap(doc.contents)) {
+        return { file: filePath, issue, action: 'failed', message: 'Frontmatter is not a YAML map' };
+      }
+
+      const map = doc.contents;
+      const matches = getAllPairsForKey(map, key);
+
+      if (matches.length < 2) {
+        return { file: filePath, issue, action: 'skipped', message: 'No duplicate keys found' };
+      }
+
+      const strategy = typeof newValue === 'string' ? newValue : undefined;
+      let keepIndex: number | null = null;
+
+      if (strategy === 'keep-first') {
+        keepIndex = matches[0]!.index;
+      } else if (strategy === 'keep-last') {
+        keepIndex = matches[matches.length - 1]!.index;
+      } else {
+        // Auto-merge only when values are effectively the same, or one side is empty.
+        const values = matches.map((m) => {
+          const valueNode = m.pair.value as unknown;
+          if (valueNode && typeof valueNode === 'object') {
+            const toJson = (valueNode as Record<string, unknown>)['toJSON'];
+            if (typeof toJson === 'function') {
+              return (toJson as () => unknown)();
+            }
+          }
+          return null;
+        });
+        const nonEmptyLocalIndexes = values
+          .map((v, i) => (!isEmpty(v) ? i : -1))
+          .filter((i) => i >= 0);
+
+        if (nonEmptyLocalIndexes.length === 0) {
+          // All empty; keep last
+          keepIndex = matches[matches.length - 1]!.index;
+        } else {
+          const nonEmptyValues = nonEmptyLocalIndexes.map((i) => values[i]!);
+          const uniqueNonEmpty: unknown[] = [];
+          for (const v of nonEmptyValues) {
+            if (!uniqueNonEmpty.some((u) => isDeepStrictEqual(u, v))) {
+              uniqueNonEmpty.push(v);
+            }
+          }
+
+          if (uniqueNonEmpty.length !== 1) {
+            return { file: filePath, issue, action: 'failed', message: 'Duplicate values differ; use interactive resolution' };
+          }
+
+          // Keep the last non-empty occurrence.
+          const lastNonEmptyLocal = nonEmptyLocalIndexes[nonEmptyLocalIndexes.length - 1]!;
+          keepIndex = matches[lastNonEmptyLocal]!.index;
+        }
+      }
+
+      if (keepIndex === null) {
+        return { file: filePath, issue, action: 'failed', message: 'Unable to determine resolution strategy' };
+      }
+
+      const removeIndexes = matches
+        .map((m) => m.index)
+        .filter((i) => i !== keepIndex)
+        .sort((a, b) => b - a);
+
+      for (const idx of removeIndexes) {
+        map.items.splice(idx, 1);
+      }
+
+      // Allow stringification even if other duplicate errors remain (handled per-issue).
+      (doc.errors as unknown[]).length = 0;
+      const newYaml = doc.toString().trimEnd();
+      const updated = replacePrimaryYaml(raw, block, newYaml);
+      await writeFile(filePath, updated, 'utf-8');
+      return { file: filePath, issue, action: 'fixed' };
+    }
+
+    case 'malformed-wikilink': {
+      if (!issue.field || !issue.fixedValue) {
+        return { file: filePath, issue, action: 'failed', message: 'No field/fixed value provided' };
+      }
+
+      const doc = parseDocument(structural.yaml);
+      if (!isMap(doc.contents)) {
+        return { file: filePath, issue, action: 'failed', message: 'Frontmatter is not a YAML map' };
+      }
+
+      const map = doc.contents;
+      const pair = getLastPairForKey(map, issue.field);
+      if (!pair) {
+        return { file: filePath, issue, action: 'failed', message: `Key not found: ${issue.field}` };
+      }
+
+      if (issue.listIndex !== undefined) {
+        if (!isSeq(pair.value)) {
+          return { file: filePath, issue, action: 'failed', message: `Expected list value for ${issue.field}` };
+        }
+        const item = getStringSequenceItem(pair.value as YAMLSeq, issue.listIndex);
+        if (!item) {
+          return { file: filePath, issue, action: 'failed', message: `List item not found: ${issue.field}[${issue.listIndex}]` };
+        }
+        item.value = issue.fixedValue;
+      } else {
+        const scalarValue = pair.value as unknown as Record<string, unknown>;
+        if (!pair.value || typeof scalarValue['value'] !== 'string') {
+          return { file: filePath, issue, action: 'failed', message: `Expected string value for ${issue.field}` };
+        }
+        scalarValue['value'] = issue.fixedValue;
+      }
+
+      (doc.errors as unknown[]).length = 0;
+      const newYaml = doc.toString().trimEnd();
+      const updated = replacePrimaryYaml(raw, block, newYaml);
+      await writeFile(filePath, updated, 'utf-8');
+      return { file: filePath, issue, action: 'fixed' };
+    }
+
+    default:
+      return { file: filePath, issue, action: 'skipped', message: 'Not structural-fixable' };
+  }
+}
+
 /**
  * Remove a field from a file's frontmatter.
  */
@@ -223,6 +487,10 @@ async function removeField(
   fieldName: string
 ): Promise<FixResult> {
   try {
+    if (!isExecuteEnabled()) {
+      return executeRequiredResult(filePath, { severity: 'warning', code: 'unknown-field', message: '', autoFixable: false });
+    }
+
     const parsed = await parseNote(filePath);
     const frontmatter = { ...parsed.frontmatter };
 
@@ -327,6 +595,7 @@ export async function runAutoFix(
   options?: { execute?: boolean }
 ): Promise<FixSummary> {
   const execute = options?.execute ?? false;
+  executeStorage.enterWith(execute);
   
   console.log(chalk.bold('Auditing vault...\n'));
   console.log(chalk.bold('Auto-fixing unambiguous issues...\n'));
@@ -480,6 +749,10 @@ export async function runAutoFix(
             .join(', ');
           console.log(chalk.green(`    ✓ Added ${fieldStr} (from directory)`));
           fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+          skipped++;
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to add type: ${fixResult.message}`));
@@ -495,6 +768,10 @@ export async function runAutoFix(
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.green(`    ✓ Added ${issue.field}: ${JSON.stringify(defaultValue)} (default)`));
             fixed++;
+          } else if (fixResult.action === 'skipped') {
+            console.log(chalk.cyan(`  ${result.relativePath}`));
+            console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+            skipped++;
           } else {
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.red(`    ✗ Failed to fix ${issue.field}: ${fixResult.message}`));
@@ -516,13 +793,62 @@ export async function runAutoFix(
           console.log(chalk.red(`    ✗ Failed to fix ${issue.field}: ${fixResult.message}`));
           failed++;
         }
+      } else if (issue.code === 'frontmatter-not-at-top') {
+        const fixResult = await applyFix(schema, result.path, issue);
+        if (fixResult.action === 'fixed') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.green('    ✓ Moved frontmatter to top'));
+          fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+          skipped++;
+        } else {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.red(`    ✗ Failed to move frontmatter: ${fixResult.message}`));
+          failed++;
+        }
+      } else if (issue.code === 'duplicate-frontmatter-keys') {
+        const fixResult = await applyFix(schema, result.path, issue);
+        if (fixResult.action === 'fixed') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.green(`    ✓ Resolved duplicate key: ${issue.duplicateKey ?? issue.field ?? ''}`));
+          fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+          skipped++;
+        } else {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.red(`    ✗ Failed to resolve duplicate keys: ${fixResult.message}`));
+          failed++;
+        }
+      } else if (issue.code === 'malformed-wikilink') {
+        const fixResult = await applyFix(schema, result.path, issue);
+        if (fixResult.action === 'fixed') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.green('    ✓ Fixed malformed wikilink'));
+          fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+          skipped++;
+        } else {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.red(`    ✗ Failed to fix malformed wikilink: ${fixResult.message}`));
+          failed++;
+        }
       } else if (issue.code === 'trailing-whitespace' && issue.field) {
-        // Auto-fix trailing whitespace
+        // Auto-fix trailing whitespace (minimal diff; write-gated by --execute)
         const fixResult = await applyFix(schema, result.path, issue);
         if (fixResult.action === 'fixed') {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.green(`    ✓ Trimmed whitespace from ${issue.field}`));
           fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ Would trim whitespace from ${issue.field} (use --execute to apply)`));
+          skipped++;
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to trim ${issue.field}: ${fixResult.message}`));
@@ -623,6 +949,7 @@ export async function runInteractiveFix(
   options?: { execute?: boolean }
 ): Promise<FixSummary> {
   const execute = options?.execute ?? false;
+  executeStorage.enterWith(execute);
   const context: FixContext = { schema, vaultDir, execute };
   
   console.log(chalk.bold('Auditing vault...\n'));
@@ -712,9 +1039,16 @@ async function handleInteractiveFix(
       return handleInvalidSourceTypeFix(schema, result, issue);
     case 'parent-cycle':
       return handleParentCycleFix(schema, result, issue);
+    // Phase 4: Structural integrity issues
+    case 'frontmatter-not-at-top':
+      return handleFrontmatterNotAtTopFix(schema, result, issue);
+    case 'duplicate-frontmatter-keys':
+      return handleDuplicateFrontmatterKeysFix(schema, result, issue);
+    case 'malformed-wikilink':
+      return handleMalformedWikilinkFix(schema, result, issue);
     // Phase 2: Hygiene issues
     case 'trailing-whitespace':
-      return handleTrailingWhitespaceFix(schema, result, issue);
+      return handleTrailingWhitespaceFix(context, result, issue);
     case 'invalid-boolean-coercion':
       return handleBooleanCoercionFix(schema, result, issue);
     case 'unknown-enum-casing':
@@ -1444,6 +1778,103 @@ async function handleParentCycleFix(
   }
 }
 
+async function handleFrontmatterNotAtTopFix(
+  schema: LoadedSchema,
+  result: FileAuditResult,
+  issue: AuditIssue
+): Promise<'fixed' | 'skipped' | 'failed' | 'quit'> {
+  if (!issue.autoFixable) {
+    console.log(chalk.dim('    (Ambiguous frontmatter; manual fix required - skipping)'));
+    return 'skipped';
+  }
+
+  const confirm = await promptConfirm('    → Move frontmatter to the top of the file?');
+  if (confirm === null) return 'quit';
+  if (!confirm) {
+    console.log(chalk.dim('    → Skipped'));
+    return 'skipped';
+  }
+
+  const fixResult = await applyFix(schema, result.path, issue);
+  if (fixResult.action === 'fixed') {
+    console.log(chalk.green('    ✓ Moved frontmatter to top'));
+    return 'fixed';
+  }
+  if (fixResult.action === 'skipped') {
+    console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+    return 'skipped';
+  }
+  console.log(chalk.red(`    ✗ Failed: ${fixResult.message}`));
+  return 'failed';
+}
+
+async function handleDuplicateFrontmatterKeysFix(
+  schema: LoadedSchema,
+  result: FileAuditResult,
+  issue: AuditIssue
+): Promise<'fixed' | 'skipped' | 'failed' | 'quit'> {
+  const key = issue.duplicateKey ?? issue.field;
+  if (!key) return 'skipped';
+
+  const options = ['keep last', 'keep first', '[skip]', '[quit]'];
+  const selected = await promptSelection(
+    `    Resolve duplicate key '${key}':`,
+    options
+  );
+
+  if (selected === null || selected === '[quit]') {
+    return 'quit';
+  }
+  if (selected === '[skip]') {
+    console.log(chalk.dim('    → Skipped'));
+    return 'skipped';
+  }
+
+  const strategy = selected === 'keep first' ? 'keep-first' : 'keep-last';
+  const fixResult = await applyFix(schema, result.path, issue, strategy);
+  if (fixResult.action === 'fixed') {
+    console.log(chalk.green(`    ✓ Resolved duplicate key '${key}' (${selected})`));
+    return 'fixed';
+  }
+  if (fixResult.action === 'skipped') {
+    console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+    return 'skipped';
+  }
+  console.log(chalk.red(`    ✗ Failed: ${fixResult.message}`));
+  return 'failed';
+}
+
+async function handleMalformedWikilinkFix(
+  schema: LoadedSchema,
+  result: FileAuditResult,
+  issue: AuditIssue
+): Promise<'fixed' | 'skipped' | 'failed' | 'quit'> {
+  const loc = issue.listIndex !== undefined
+    ? `${issue.field}[${issue.listIndex}]`
+    : issue.field;
+
+  const confirm = await promptConfirm(
+    `    → Fix malformed wikilink${loc ? ` in '${loc}'` : ''}?`
+  );
+  if (confirm === null) return 'quit';
+  if (!confirm) {
+    console.log(chalk.dim('    → Skipped'));
+    return 'skipped';
+  }
+
+  const fixResult = await applyFix(schema, result.path, issue);
+  if (fixResult.action === 'fixed') {
+    console.log(chalk.green('    ✓ Fixed malformed wikilink'));
+    return 'fixed';
+  }
+  if (fixResult.action === 'skipped') {
+    console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+    return 'skipped';
+  }
+  console.log(chalk.red(`    ✗ Failed: ${fixResult.message}`));
+  return 'failed';
+}
+
 // ============================================================================
 // Phase 2: Hygiene Issue Handlers
 // ============================================================================
@@ -1452,11 +1883,19 @@ async function handleParentCycleFix(
  * Handle trailing whitespace fix.
  */
 async function handleTrailingWhitespaceFix(
-  schema: LoadedSchema,
+  context: FixContext,
   result: FileAuditResult,
   issue: AuditIssue
 ): Promise<'fixed' | 'skipped' | 'failed' | 'quit'> {
   if (!issue.field) return 'skipped';
+
+  const { schema } = context;
+  const execute = context.execute ?? false;
+
+  if (!execute) {
+    console.log(chalk.yellow(`    ⚠ Would trim whitespace from ${issue.field} (use --execute to apply)`));
+    return 'skipped';
+  }
 
   const confirm = await promptConfirm(
     `    → Trim whitespace from '${issue.field}'?`
@@ -1471,6 +1910,9 @@ async function handleTrailingWhitespaceFix(
   if (fixResult.action === 'fixed') {
     console.log(chalk.green(`    ✓ Trimmed whitespace from ${issue.field}`));
     return 'fixed';
+  } else if (fixResult.action === 'skipped') {
+    console.log(chalk.dim('    → Skipped'));
+    return 'skipped';
   } else {
     console.log(chalk.red(`    ✗ Failed: ${fixResult.message}`));
     return 'failed';
