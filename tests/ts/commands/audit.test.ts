@@ -811,7 +811,7 @@ priority: medium
       expect(result.stdout).not.toContain('temp.tmp.md');
     });
 
-    it('should respect BWRB_AUDIT_EXCLUDE env var', async () => {
+    it('should respect BWRB_EXCLUDE env var', async () => {
       // Create a directory that should be excluded via env var
       await mkdir(join(tempVaultDir, 'Archive'), { recursive: true });
       await writeFile(
@@ -834,8 +834,8 @@ priority: medium
       );
 
       // Set env var and run
-      const originalEnv = process.env.BWRB_AUDIT_EXCLUDE;
-      process.env.BWRB_AUDIT_EXCLUDE = 'Archive';
+      const originalEnv = process.env.BWRB_EXCLUDE;
+      process.env.BWRB_EXCLUDE = 'Archive';
 
       try {
         const result = await runCLI(['audit'], tempVaultDir);
@@ -846,19 +846,21 @@ priority: medium
       } finally {
         // Restore env
         if (originalEnv === undefined) {
-          delete process.env.BWRB_AUDIT_EXCLUDE;
+          delete process.env.BWRB_EXCLUDE;
         } else {
-          process.env.BWRB_AUDIT_EXCLUDE = originalEnv;
+          process.env.BWRB_EXCLUDE = originalEnv;
         }
       }
     });
 
-    it('should respect schema audit.ignored_directories config', async () => {
-      // Update schema with ignored_directories
+    it('should respect config.excluded_directories (and legacy alias)', async () => {
       const schemaWithExclusions = {
         ...TEST_SCHEMA,
+        config: {
+          excluded_directories: ['Templates'],
+        },
         audit: {
-          ignored_directories: ['Templates', 'Archive/Old'],
+          ignored_directories: ['Archive/Old'],
         },
       };
       await writeFile(
