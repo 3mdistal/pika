@@ -216,7 +216,7 @@ Note: Deletion is permanent. The file is removed from the filesystem.
           return;
         }
         console.log('Cancelled.');
-        process.exitCode = 1;
+        process.exitCode = ExitCodes.VALIDATION_ERROR;
         return;
       }
 
@@ -233,7 +233,7 @@ Note: Deletion is permanent. The file is removed from the filesystem.
             return;
           }
           printError(notFoundError);
-          process.exitCode = 1;
+          process.exitCode = ExitCodes.VALIDATION_ERROR;
           return;
         }
         if (code === 'EACCES' || code === 'EPERM') {
@@ -244,7 +244,7 @@ Note: Deletion is permanent. The file is removed from the filesystem.
             return;
           }
           printError(permError);
-          process.exitCode = 1;
+          process.exitCode = ExitCodes.VALIDATION_ERROR;
           return;
         }
       }
@@ -255,7 +255,7 @@ Note: Deletion is permanent. The file is removed from the filesystem.
         return;
       }
       printError(message);
-      process.exitCode = 1;
+      process.exitCode = ExitCodes.VALIDATION_ERROR;
       return;
     }
   });
@@ -325,7 +325,7 @@ async function handleSingleDelete(
         console.error(`  ${c.relativePath}`);
       }
     }
-    process.exitCode = 1;
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
     return;
   }
 
@@ -342,7 +342,7 @@ async function handleSingleDelete(
       return;
     }
     printError(error);
-    process.exitCode = 1;
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
     return;
   }
 
@@ -423,7 +423,7 @@ async function handleBulkDelete(
       return;
     }
     printError(result.error);
-    process.exitCode = 1;
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
     return;
   }
 
@@ -538,7 +538,7 @@ async function handleBulkDelete(
 
   // Exit with error if any deletions failed
   if (errors.length > 0) {
-    process.exitCode = 1;
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
   }
 }
 
