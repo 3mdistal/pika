@@ -9,6 +9,7 @@ import { join, dirname, basename } from 'path';
 import { readFile, writeFile } from 'fs/promises';
 import { parseDocument, isMap, isSeq } from 'yaml';
 import { isDeepStrictEqual } from 'node:util';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   getType,
   getFieldsForType,
@@ -67,7 +68,11 @@ function isEmpty(value: unknown): boolean {
   return false;
 }
 
-let currentExecute = false;
+const executeStorage = new AsyncLocalStorage<boolean>();
+
+function isExecuteEnabled(): boolean {
+  return executeStorage.getStore() ?? false;
+}
 
 function executeRequiredResult(filePath: string, issue: AuditIssue): FixResult {
   return { file: filePath, issue, action: 'skipped', message: 'Use --execute to write changes' };
@@ -92,7 +97,7 @@ async function applyFix(
       return await applyStructuralFix(filePath, issue, newValue);
     }
 
-    if (!currentExecute) {
+    if (!isExecuteEnabled()) {
       return executeRequiredResult(filePath, issue);
     }
 
@@ -248,7 +253,7 @@ async function applyStructuralFix(
   issue: AuditIssue,
   newValue?: unknown
 ): Promise<FixResult> {
-  if (!currentExecute) {
+  if (!isExecuteEnabled()) {
     return executeRequiredResult(filePath, issue);
   }
 
@@ -405,7 +410,7 @@ async function removeField(
   fieldName: string
 ): Promise<FixResult> {
   try {
-    if (!currentExecute) {
+    if (!isExecuteEnabled()) {
       return executeRequiredResult(filePath, { severity: 'warning', code: 'unknown-field', message: '', autoFixable: false });
     }
 
@@ -513,7 +518,7 @@ export async function runAutoFix(
   options?: { execute?: boolean }
 ): Promise<FixSummary> {
   const execute = options?.execute ?? false;
-  currentExecute = execute;
+  executeStorage.enterWith(execute);
   
   console.log(chalk.bold('Auditing vault...\n'));
   console.log(chalk.bold('Auto-fixing unambiguous issues...\n'));
@@ -863,7 +868,7 @@ export async function runInteractiveFix(
   options?: { execute?: boolean }
 ): Promise<FixSummary> {
   const execute = options?.execute ?? false;
-  currentExecute = execute;
+  executeStorage.enterWith(execute);
   const context: FixContext = { schema, vaultDir, execute };
   
   console.log(chalk.bold('Auditing vault...\n'));
