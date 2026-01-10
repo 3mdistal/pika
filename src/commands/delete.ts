@@ -29,7 +29,6 @@ import {
   jsonSuccess,
   jsonError,
   ExitCodes,
-  exitWithResolutionError,
 } from '../lib/output.js';
 import { buildNoteIndex } from '../lib/navigation.js';
 import { parsePickerMode, resolveAndPick, type PickerMode } from '../lib/picker.js';
@@ -211,12 +210,18 @@ Note: Deletion is permanent. The file is removed from the filesystem.
     } catch (err) {
       // Handle user cancellation cleanly
       if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exitCode = ExitCodes.VALIDATION_ERROR;
+          return;
+        }
         console.log('Cancelled.');
-        process.exit(1);
+        process.exitCode = ExitCodes.VALIDATION_ERROR;
+        return;
       }
 
       const message = err instanceof Error ? err.message : String(err);
-      
+
       // Handle specific error types
       if (err instanceof Error && 'code' in err) {
         const code = (err as NodeJS.ErrnoException).code;
@@ -224,28 +229,34 @@ Note: Deletion is permanent. The file is removed from the filesystem.
           const notFoundError = 'File not found or already deleted';
           if (jsonMode) {
             printJson(jsonError(notFoundError, { code: ExitCodes.IO_ERROR }));
-            process.exit(ExitCodes.IO_ERROR);
+            process.exitCode = ExitCodes.IO_ERROR;
+            return;
           }
           printError(notFoundError);
-          process.exit(1);
+          process.exitCode = ExitCodes.VALIDATION_ERROR;
+          return;
         }
         if (code === 'EACCES' || code === 'EPERM') {
           const permError = 'Permission denied: cannot delete file';
           if (jsonMode) {
             printJson(jsonError(permError, { code: ExitCodes.IO_ERROR }));
-            process.exit(ExitCodes.IO_ERROR);
+            process.exitCode = ExitCodes.IO_ERROR;
+            return;
           }
           printError(permError);
-          process.exit(1);
+          process.exitCode = ExitCodes.VALIDATION_ERROR;
+          return;
         }
       }
 
       if (jsonMode) {
-        printJson(jsonError(message));
-        process.exit(ExitCodes.VALIDATION_ERROR);
+        printJson(jsonError(message, { code: ExitCodes.VALIDATION_ERROR }));
+        process.exitCode = ExitCodes.VALIDATION_ERROR;
+        return;
       }
       printError(message);
-      process.exit(1);
+      process.exitCode = ExitCodes.VALIDATION_ERROR;
+      return;
     }
   });
 
@@ -266,8 +277,11 @@ async function handleSingleDelete(
 
   // JSON mode requires --force (no interactive confirmation)
   if (jsonMode && !options.force) {
-    printJson(jsonError('JSON mode requires --force flag (no interactive confirmation)'));
-    process.exit(ExitCodes.VALIDATION_ERROR);
+    printJson(jsonError('JSON mode requires --force flag (no interactive confirmation)', {
+      code: ExitCodes.VALIDATION_ERROR,
+    }));
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
+    return;
   }
 
   // Build note index
@@ -281,9 +295,38 @@ async function handleSingleDelete(
 
   if (!result.ok) {
     if (result.cancelled) {
-      process.exit(0);
+      process.exitCode = ExitCodes.SUCCESS;
+      return;
     }
-    exitWithResolutionError(result.error, result.candidates, jsonMode);
+
+    if (jsonMode) {
+      const errorDetails = result.candidates
+        ? {
+            errors: result.candidates.map(c => ({
+              field: 'candidate',
+              value: c.relativePath,
+              message: 'Matching file',
+            })),
+          }
+        : {};
+
+      printJson(jsonError(result.error, {
+        ...errorDetails,
+        code: ExitCodes.VALIDATION_ERROR,
+      }));
+      process.exitCode = ExitCodes.VALIDATION_ERROR;
+      return;
+    }
+
+    printError(result.error);
+    if (result.candidates && result.candidates.length > 0) {
+      console.error('\nMatching files:');
+      for (const c of result.candidates) {
+        console.error(`  ${c.relativePath}`);
+      }
+    }
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
+    return;
   }
 
   const targetFile = result.file;
@@ -295,10 +338,12 @@ async function handleSingleDelete(
     const error = `File not found: ${relativePath}`;
     if (jsonMode) {
       printJson(jsonError(error, { code: ExitCodes.IO_ERROR }));
-      process.exit(ExitCodes.IO_ERROR);
+      process.exitCode = ExitCodes.IO_ERROR;
+      return;
     }
     printError(error);
-    process.exit(1);
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
+    return;
   }
 
   // Check for backlinks (warn user if other notes link to this file)
@@ -329,7 +374,8 @@ async function handleSingleDelete(
     }
     if (!confirmed) {
       console.log('Cancelled.');
-      process.exit(0);
+      process.exitCode = ExitCodes.SUCCESS;
+      return;
     }
   }
 
@@ -372,11 +418,13 @@ async function handleBulkDelete(
 
   if (result.error) {
     if (jsonMode) {
-      printJson(jsonError(result.error));
-      process.exit(ExitCodes.VALIDATION_ERROR);
+      printJson(jsonError(result.error, { code: ExitCodes.VALIDATION_ERROR }));
+      process.exitCode = ExitCodes.VALIDATION_ERROR;
+      return;
     }
     printError(result.error);
-    process.exit(1);
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
+    return;
   }
 
   const files = result.files;
@@ -391,7 +439,8 @@ async function handleBulkDelete(
     } else {
       printInfo('No files matched the targeting criteria.');
     }
-    process.exit(0);
+    process.exitCode = ExitCodes.SUCCESS;
+    return;
   }
 
   // Dry-run mode: show what would be deleted
@@ -434,7 +483,8 @@ async function handleBulkDelete(
       console.log('');
       printInfo('To actually delete these files, run with --execute (or -x)');
     }
-    process.exit(0);
+    process.exitCode = ExitCodes.SUCCESS;
+    return;
   }
 
   // Execute mode: actually delete files
@@ -488,7 +538,7 @@ async function handleBulkDelete(
 
   // Exit with error if any deletions failed
   if (errors.length > 0) {
-    process.exit(1);
+    process.exitCode = ExitCodes.VALIDATION_ERROR;
   }
 }
 
