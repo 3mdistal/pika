@@ -17,6 +17,9 @@ All notable changes to Bowerbird are documented in this file.
 - **`bwrb audit --fix` is now dry-run by default** (#271)
   - Use `--execute` to write changes to disk (including frontmatter edits and file moves)
 
+- **Vault auto-detection now uses nearest `.bwrb/schema.json` (find-up)** (#337)
+  - Precedence: `--vault` > find-up > `BWRB_VAULT` > `cwd` (error if not a vault)
+
 ### Added
 
 
