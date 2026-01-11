@@ -2,7 +2,7 @@
 
 > The product-level contract for machine-readable CLI output.
 
-**Canonical docs:** This document is product rationale + implementation contract. The user-facing, canonical reference should live on the docs-site at `/reference/output/`.
+**Canonical docs:** This document is product rationale + implementation contract. It should be mirrored on the docs-site (planned path: `/reference/output/`).
 
 ---
 
@@ -24,12 +24,15 @@ When `--output json` is selected, commands MUST follow these rules:
 ### Stdout
 
 - MUST write **exactly one** complete JSON value to **stdout**.
-- MUST newline-terminate the JSON output.
+- MAY pretty-print the JSON (whitespace and internal newlines are allowed).
+- MUST newline-terminate the output.
 - MUST NOT write any non-JSON text to stdout (no tables, prompts, progress, warnings, etc.).
+- Consumers MUST parse stdout as JSON (not line-delimited/NDJSON).
 
 ### Stderr
 
 - Human-oriented logs, progress, warnings, and diagnostics MUST go to **stderr**, or be suppressed in JSON mode.
+- In JSON mode, commands SHOULD avoid interactive prompts; if required input is missing, return `JsonError` and a non-zero exit code instead.
 
 ### JSON envelope
 
@@ -74,6 +77,15 @@ export type JsonResult<T = unknown> = JsonSuccess<T> | JsonError;
   ]
 }
 ```
+
+---
+
+## Stability & compatibility
+
+- The `JsonResult` envelope is intended to be forward-compatible: consumers MUST ignore unknown fields.
+- We MAY add new optional fields over time without breaking consumers.
+- We SHOULD NOT rename/remove existing fields without a major version bump.
+- The process exit code is authoritative; `JsonError.code` is best-effort metadata.
 
 ---
 
