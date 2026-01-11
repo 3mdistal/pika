@@ -517,6 +517,62 @@ All notable changes to Bowerbird are documented in this file.
 - **Body sections skipped when using templates** - Now works alongside templates
 - **Numbered select prompt flicker** - Uses differential updates instead of full re-render
 
+## [0.1.2] - 2026-01-11
+
+### Changed (Breaking)
+
+- **`bwrb audit --fix` now applies fixes by default** (#352)
+  - Use `--dry-run` to preview without writing
+  - `--execute` is no longer required (accepted as deprecated no-op)
+  - `--fix` requires explicit targeting (`--type`, `--path`, `--where`, `--body`, or `--all`)
+
+- **Vault auto-detection now uses nearest `.bwrb/schema.json` (find-up)** (#347)
+  - Precedence: `--vault` > find-up > `BWRB_VAULT` > `cwd` (error if not a vault)
+
+### Added
+
+- **Stable system-managed note IDs** (#351)
+  - `bwrb new` writes an `id` (UUIDv4) to frontmatter
+  - IDs are never reused (append-only registry in `.bwrb/ids.jsonl`)
+  - Commands using targeting selectors support `--id <uuid>` for stable lookup
+
+- **Configurable excluded directories** (#339)
+
+- **Audit detection: trailing whitespace in raw frontmatter** (#341)
+
+- **Audit --fix: migrate unknown fields** (#345)
+
+- **Audit --fix Phase 4: structural integrity fixes** (#340)
+  - `frontmatter-not-at-top`: move a single clean-parsing YAML frontmatter block to the top
+  - `duplicate-frontmatter-keys`: auto-merge same/empty values; interactive keep-first/keep-last/skip when values differ
+  - `malformed-wikilink`: deterministic bracket repairs for near-wikilinks in frontmatter only (scalars and list items)
+
+- **Validate unknown fields in `--where` and `--fields`** (#326)
+
+- **Schema validate warns when `output_dir` is missing** (#348)
+
+### Fixed
+
+- **Aligned JSON Schema with runtime schema** (#323)
+
+- **Ignore slashes in note names when creating files** (#355)
+
+- **Avoid truncated JSON output on `delete` errors** (#350)
+
+- **`delete` falls back to help when query-parsed** (#360)
+
+- **Add max attempts for UUID generation** (#361)
+
+### Documentation
+
+- **Document CLI flag semantics (`--force` vs `--execute`)** (#324)
+- **Document audit trailing-whitespace in AI skill** (#357)
+- **Define CLI JSON output + exit contract** (#362)
+
+### Changed (Internal)
+
+- **Stop exporting unused note-id helpers (Knip)** (#359)
+
 ## [0.2.0] - 2025-12-29
 
 Complete rewrite from shell scripts to TypeScript with significant new features.
