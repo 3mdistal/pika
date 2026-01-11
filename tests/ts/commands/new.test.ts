@@ -107,17 +107,36 @@ describe('new command', () => {
         ['new', 'task', '--json', '{"name": "Fix the bug"}', '--template', 'bug-report'],
         vaultDir
       );
-
+ 
       expect(result.exitCode).toBe(0);
       const output = JSON.parse(result.stdout);
       expect(output.success).toBe(true);
       expect(output.path).toContain('Fix the bug.md');
-
+ 
       // Read the created file and verify template was applied
       const content = await readFile(join(vaultDir, output.path), 'utf-8');
       expect(content).toContain('status: backlog');
       expect(content).toContain('Steps to Reproduce');
       expect(content).toContain('Expected Behavior');
+    });
+
+    it('should ignore slashes in JSON name when creating filename', async () => {
+      const result = await runCLI(
+        ['new', 'task', '--json', '{"name": "Foo/Bar"}', '--template', 'bug-report'],
+        vaultDir
+      );
+
+      expect(result.exitCode).toBe(0);
+      const output = JSON.parse(result.stdout);
+      expect(output.success).toBe(true);
+      expect(output.path).toContain('FooBar.md');
+      expect(output.path).not.toContain('Foo/Bar.md');
+
+      const content = await readFile(join(vaultDir, output.path), 'utf-8');
+      expect(content).toContain('status: backlog');
+
+      const unsanitizedPath = join(vaultDir, output.path.replace('FooBar.md', 'Foo/Bar.md'));
+      await expect(readFile(unsanitizedPath, 'utf-8')).rejects.toThrow();
     });
 
     it('should create note with --template default', async () => {
