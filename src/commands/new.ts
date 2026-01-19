@@ -373,7 +373,8 @@ async function createNoteFromJson(
     }
 
     const ownership = await resolveJsonOwnership(schema, vaultDir, typePath, typeDef, ownershipOptions);
-    const content = await buildJsonNoteContent(schema, vaultDir, typePath, typeDef, jsonInput, template);
+    const resolvedTemplate = template ?? null;
+    const content = await buildJsonNoteContent(schema, vaultDir, typePath, typeDef, jsonInput, resolvedTemplate);
 
     const result = await writeNotePlan({
       schema,
@@ -383,7 +384,7 @@ async function createNoteFromJson(
       ownership,
       mode: 'json',
       content,
-      template,
+      template: resolvedTemplate,
     },
     {
       onExists: (filePath, baseDir) => {
@@ -395,7 +396,7 @@ async function createNoteFromJson(
     return result;
   } catch (err) {
     if (err instanceof JsonCommandError) {
-      if (!('code' in err.result)) {
+      if (!err.result.success) {
         err.result.code = err.exitCode;
       }
       printJson(err.result);
@@ -761,6 +762,10 @@ function parseJsonNoteInput(jsonInput: string): JsonNoteInputResult {
       throwJsonError(jsonError('_body must be an object with section names as keys'), ExitCodes.VALIDATION_ERROR);
     }
     bodyInput = rawBodyInput as Record<string, unknown>;
+  }
+
+  if (bodyInput === undefined) {
+    return { frontmatter: frontmatterInput };
   }
 
   return { frontmatter: frontmatterInput, bodyInput };
