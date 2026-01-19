@@ -15,7 +15,7 @@ import {
   getOutputDir,
 } from './schema.js';
 import type { LoadedSchema } from '../types/schema.js';
-import { extractLinkTarget } from './audit/types.js';
+import { extractLinkTargets } from './links.js';
 
 // ============================================================================
 // Types
@@ -276,26 +276,7 @@ export function validateNewOwned(
  * Handles both single wikilinks and arrays of wikilinks.
  */
 export function extractWikilinkReferences(value: unknown): string[] {
-  const references: string[] = [];
-
-  const maybeAddTarget = (candidate: string) => {
-    const target = extractLinkTarget(candidate);
-    if (target) {
-      references.push(target);
-    }
-  };
-
-  if (typeof value === 'string') {
-    maybeAddTarget(value);
-  } else if (Array.isArray(value)) {
-    for (const item of value) {
-      if (typeof item === 'string') {
-        maybeAddTarget(item);
-      }
-    }
-  }
-
-  return references;
+  return extractLinkTargets(value);
 }
 
 

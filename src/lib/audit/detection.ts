@@ -32,8 +32,8 @@ import {
   isWikilink,
   isMarkdownLink,
   extractWikilinkTarget,
-  extractLinkTarget,
 } from './types.js';
+import { extractLinkTarget } from '../links.js';
 
 // Import file discovery functions from shared module
 import {
@@ -538,19 +538,6 @@ function checkRelationFieldIssues(
     const rawTarget = extractLinkTarget(rawValue);
     if (!rawTarget) continue;
 
-    if (rawTarget === noteName || rawTarget === notePathKey) {
-      issues.push({
-        severity: 'error',
-        code: 'self-reference',
-        message: `Self-reference detected: ${fieldName} points to itself`,
-        field: fieldName,
-        value: rawValue,
-        listIndex: Array.isArray(value) ? index : undefined,
-        autoFixable: false,
-      });
-      continue;
-    }
-
     const resolvedTarget = resolveRelationTarget(noteTargetIndex, rawTarget);
 
     if (resolvedTarget.candidates.length === 0 && noteTargetIndex) {
@@ -575,6 +562,24 @@ function checkRelationFieldIssues(
       noteTargetIndex
     );
 
+    const selfMatchCandidates = filteredCandidates.filter((candidate) => {
+      const candidateKey = candidate.replace(/\.md$/, '');
+      return candidateKey === notePathKey || candidateKey === noteName;
+    });
+
+    if (selfMatchCandidates.length === 1 && filteredCandidates.length === 1) {
+      issues.push({
+        severity: 'error',
+        code: 'self-reference',
+        message: `Self-reference detected: ${fieldName} points to itself`,
+        field: fieldName,
+        value: rawValue,
+        listIndex: Array.isArray(value) ? index : undefined,
+        autoFixable: false,
+      });
+      continue;
+    }
+
     if (filteredCandidates.length > 1) {
       issues.push({
         severity: 'warning',
@@ -591,6 +596,7 @@ function checkRelationFieldIssues(
 
     const resolvedPath =
       filteredCandidates.length === 1 ? filteredCandidates[0] : resolvedTarget.resolvedPath;
+
 
     if (resolvedPath && noteTypeMap && field.source) {
       const pathKey = resolvedPath.replace(/\.md$/, '');

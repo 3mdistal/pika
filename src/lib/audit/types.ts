@@ -237,7 +237,7 @@ export function isWikilink(value: string): boolean {
 /**
  * Check if a value is formatted as a quoted wikilink.
  */
-function isQuotedWikilink(value: string): boolean {
+export function isQuotedWikilink(value: string): boolean {
   return /^"\[\[.+\]\]"$/.test(value);
 }
 
@@ -286,24 +286,6 @@ export function extractWikilinkTarget(value: string): string | null {
   return match ? match[1]! : null;
 }
 
-/**
- * Extract a relation target from a link value.
- * Supports wikilinks and markdown links (quoted or unquoted).
- */
-export function extractLinkTarget(value: string): string | null {
-  if (!value) return null;
-  if (isWikilink(value) || isQuotedWikilink(value)) {
-    const wikilinkTarget = extractWikilinkTarget(value);
-    if (wikilinkTarget) return wikilinkTarget;
-  }
-
-  if (isMarkdownLink(value)) {
-    const markdownTarget = extractMarkdownLinkTarget(value);
-    if (markdownTarget) return markdownTarget;
-  }
-
-  return null;
-}
 
 /**
  * Convert a value to wikilink format.
