@@ -71,10 +71,11 @@ parent: [[Self Task]]
 `
       );
 
+
       const result = await runCLI(['audit', 'task'], tempVaultDir);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stdout).toContain('Self-reference detected');
+      expect(result.stdout).toContain('Self-reference detected: parent points to itself');
     });
 
     it('should detect ambiguous relation target', async () => {
@@ -88,6 +89,7 @@ milestone: [[Shared]]
 ---
 `
       );
+
       await mkdir(join(tempVaultDir, 'Objectives/Milestones/Shared'), { recursive: true });
       await writeFile(
         join(tempVaultDir, 'Objectives/Milestones', 'Shared.md'),
@@ -109,10 +111,34 @@ status: raw
       const result = await runCLI(['audit', 'task'], tempVaultDir);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stdout).toContain('Ambiguous link target');
+      expect(result.stdout).toContain("Ambiguous link target for milestone: 'Shared'");
     });
 
     it('should detect invalid list elements', async () => {
+      const schema = {
+        ...TEST_SCHEMA,
+        types: {
+          ...TEST_SCHEMA.types,
+          task: {
+            ...TEST_SCHEMA.types.task,
+            fields: {
+              ...TEST_SCHEMA.types.task.fields,
+              tags: {
+                ...TEST_SCHEMA.types.task.fields.tags,
+                prompt: 'select',
+                options: ['good', 'bad'],
+                multiple: true,
+              },
+            },
+          },
+        },
+      };
+
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify(schema, null, 2)
+      );
+
       await writeFile(
         join(tempVaultDir, 'Objectives/Tasks', 'Bad List.md'),
         `---
@@ -127,9 +153,10 @@ tags:
 
       const result = await runCLI(['audit', 'task'], tempVaultDir);
 
-      expect(result.exitCode).toBe(1);
-      expect(result.stdout).toContain('Invalid list element');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain("Invalid list element in 'tags' at index 1");
     });
+
   });
 
   describe('missing required fields', () => {
@@ -154,8 +181,9 @@ tags:
       };
       await writeFile(
         join(tempVaultDir, '.bwrb', 'schema.json'),
-        JSON.stringify(schemaWithRequired, null, 2)
+        JSON.stringify(TEST_SCHEMA, null, 2)
       );
+
       await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
     });
 
