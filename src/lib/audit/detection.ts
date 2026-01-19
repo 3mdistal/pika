@@ -183,7 +183,7 @@ export async function auditFile(
   _vaultDir: string,
   file: ManagedFile,
   options: AuditRunOptions,
-  allFiles?: Set<string>,
+  _allFiles?: Set<string>,
   ownershipIndex?: OwnershipIndex,
   notePathMap?: Map<string, string>,
   noteTypeMap?: Map<string, string>,
@@ -457,7 +457,7 @@ function isEffectivelyEmpty(value: unknown): boolean {
 type ResolvedRelationTarget = {
   rawTarget: string;
   candidates: string[];
-  resolvedPath?: string;
+  resolvedPath?: string | undefined;
 };
 
 function resolveRelationTarget(
@@ -465,7 +465,7 @@ function resolveRelationTarget(
   rawTarget: string
 ): ResolvedRelationTarget {
   if (!noteTargetIndex) {
-    return { rawTarget, candidates: [] };
+    return { rawTarget, candidates: [], resolvedPath: undefined };
   }
 
   const candidates = noteTargetIndex.targetToPaths.get(rawTarget) ?? [];
@@ -473,7 +473,7 @@ function resolveRelationTarget(
     return { rawTarget, candidates, resolvedPath: candidates[0] };
   }
 
-  return { rawTarget, candidates };
+  return { rawTarget, candidates, resolvedPath: undefined };
 }
 
 function filterCandidatesBySource(

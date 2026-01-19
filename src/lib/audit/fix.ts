@@ -19,6 +19,7 @@ import {
   getOptionsForField,
   getConcreteTypeNames,
   getTypeFamilies,
+  getDescendants,
 } from '../schema.js';
 import { parseNote, writeNote } from '../frontmatter.js';
 import { levenshteinDistance } from '../discovery.js';
