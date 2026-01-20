@@ -417,10 +417,12 @@ export async function buildNoteTargetIndex(
   const addTarget = (key: string, relativePath: string) => {
     const existing = targetToPaths.get(key);
     if (existing) {
-      existing.push(relativePath);
-    } else {
-      targetToPaths.set(key, [relativePath]);
+      if (!existing.includes(relativePath)) {
+        existing.push(relativePath);
+      }
+      return;
     }
+    targetToPaths.set(key, [relativePath]);
   };
 
   for (const file of allFiles) {

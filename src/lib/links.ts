@@ -56,6 +56,10 @@ export function extractLinkTargets(value: unknown): string[] {
     let found = false;
     let match: RegExpExecArray | null;
 
+    // Reset regex state for repeated calls
+    wikilinkPattern.lastIndex = 0;
+    markdownPattern.lastIndex = 0;
+
     while ((match = wikilinkPattern.exec(input)) !== null) {
       references.push(match[1]!);
       found = true;

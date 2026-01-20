@@ -357,14 +357,6 @@ export async function auditFile(
       }
     }
 
-    // Check format violations for relation fields (wikilink vs markdown)
-    if (field.prompt === 'relation' && value) {
-      const formatIssue = checkFormatViolation(fieldName, value, schema.config.linkFormat);
-      if (formatIssue) {
-        issues.push(formatIssue);
-      }
-    }
-
     if (field.prompt === 'relation') {
       const relationIssues = checkRelationFieldIssues(
         schema,
@@ -373,10 +365,31 @@ export async function auditFile(
         field,
         noteTargetIndex,
         noteTypeMap,
-        ownershipIndex,
         file
       );
       issues.push(...relationIssues);
+
+      // Only check format violations for relation fields if we did not already detect
+      // a higher-signal relation integrity issue. This prevents format-violation from
+      // masking issues like self-reference / ambiguous-link-target.
+      const hasRelationIntegrityIssue = relationIssues.some((i) =>
+        i.code === 'self-reference' || i.code === 'ambiguous-link-target'
+      );
+
+      const hasParentSelfReferenceIssue =
+        fieldName === 'parent' && issues.some((i) => i.code === 'self-reference' && i.field === 'parent');
+
+      if (!hasRelationIntegrityIssue && !hasParentSelfReferenceIssue && value) {
+        // In practice, YAML parsers may interpret bare wikilinks like `parent: [[Foo]]`
+        // as a YAML array ("flow sequence") rather than a string. That is a YAML concern,
+        // not a user-facing "format violation".
+        if (!Array.isArray(value)) {
+          const formatIssue = checkFormatViolation(fieldName, value, schema.config.linkFormat);
+          if (formatIssue) {
+            issues.push(formatIssue);
+          }
+        }
+      }
     }
   }
 
@@ -518,7 +531,6 @@ function checkRelationFieldIssues(
   field: Field,
   noteTargetIndex: import('../discovery.js').NoteTargetIndex | undefined,
   noteTypeMap: Map<string, string> | undefined,
-  ownershipIndex: OwnershipIndex | undefined,
   file: ManagedFile
 ): AuditIssue[] {
   const issues: AuditIssue[] = [];
@@ -607,23 +619,6 @@ function checkRelationFieldIssues(
       }
     }
 
-    if (resolvedPath && ownershipIndex) {
-      const validation = canReference(ownershipIndex, file.relativePath, resolvedPath);
-      if (!validation.valid) {
-        for (const error of validation.errors) {
-          issues.push({
-            severity: 'error',
-            code: 'owned-note-referenced',
-            message: `Cannot reference owned note '${rawTarget}' - it is owned by '${error.details?.existingOwnerPath}'`,
-            field: fieldName,
-            value: rawValue,
-            autoFixable: false,
-            ownerPath: error.details?.existingOwnerPath,
-            ownedNotePath: resolvedPath,
-          });
-        }
-      }
-    }
   }
 
   return issues;

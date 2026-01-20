@@ -16,6 +16,7 @@ import {
 } from './schema.js';
 import type { LoadedSchema } from '../types/schema.js';
 import { extractLinkTargets } from './links.js';
+import { isWikilink } from './audit/types.js';
 
 // ============================================================================
 // Types
@@ -276,7 +277,27 @@ export function validateNewOwned(
  * Handles both single wikilinks and arrays of wikilinks.
  */
 export function extractWikilinkReferences(value: unknown): string[] {
-  return extractLinkTargets(value);
+  // Ownership checks historically treated relation values as *wikilinks* only.
+  // Keep behavior stable: only extract wikilinks (even if they're embedded in a string)
+  // and ignore markdown links.
+  if (typeof value === 'string') {
+    const targets = extractLinkTargets(value);
+    const wikilinkMatches = targets.filter((t) => isWikilink(`[[${t}]]`));
+    return Array.from(new Set(wikilinkMatches));
+  }
+
+  if (Array.isArray(value)) {
+    const refs: string[] = [];
+    for (const item of value) {
+      if (typeof item !== 'string') continue;
+      const targets = extractLinkTargets(item);
+      const wikilinkMatches = targets.filter((t) => isWikilink(`[[${t}]]`));
+      refs.push(...wikilinkMatches);
+    }
+    return Array.from(new Set(refs));
+  }
+
+  return [];
 }
 
 
