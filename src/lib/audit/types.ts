@@ -42,6 +42,9 @@ export type IssueCode =
   | 'duplicate-list-values'
   | 'invalid-boolean-coercion'
   | 'singular-plural-mismatch'
+  // Phase 5: Type coercion fixes
+  | 'wrong-scalar-type'
+  | 'invalid-date-format'
   // Phase 4: Structural integrity fixes
   | 'frontmatter-not-at-top'
   | 'duplicate-frontmatter-keys'
@@ -176,7 +179,7 @@ export interface AuditOptions {
   auto?: boolean;
   /** Preview fixes without writing. */
   dryRun?: boolean;
-  /** Deprecated for audit fixes (kept for compatibility). */
+  /** Apply fixes; required for audit --fix to write changes. */
   execute?: boolean;
   all?: boolean;
   allowField?: string[];
