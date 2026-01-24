@@ -26,7 +26,7 @@ describe('audit command', () => {
     it('should audit specific type path', async () => {
       const result = await runCLI(['audit', 'idea'], vaultDir);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(0);
     });
 
     it('should audit child types', async () => {
@@ -141,6 +141,7 @@ status: raw
         `---
 type: task
 status: backlog
+priority: medium
 tags:
   - good
   - 42
@@ -201,7 +202,7 @@ priority: medium
 
       const result = await runCLI(['audit', 'idea'], tempVaultDir);
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain('Missing required field: requiredNoDefault');
     });
   });
