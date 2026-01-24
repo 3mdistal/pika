@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "sh -c 'shift $([ \"$1\" = \"--\" ] && echo 1 || echo 0); exec tsx src/index.ts \"$@\"' --",
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup --config tsup.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
