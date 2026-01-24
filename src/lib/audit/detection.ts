@@ -727,7 +727,7 @@ function collectStructuralIssues(
   // frontmatter-not-at-top
   if (structural.primaryBlock && !structural.atTop) {
     const autoFixable =
-      structural.blocks.length === 1 &&
+      structural.frontmatterBlocks.length === 1 &&
       !structural.unterminated &&
       structural.yamlErrors.length === 0;
 

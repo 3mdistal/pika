@@ -390,7 +390,7 @@ async function applyStructuralFix(
     case 'frontmatter-not-at-top': {
       const eligible =
         !structural.atTop &&
-        structural.blocks.length === 1 &&
+        structural.frontmatterBlocks.length === 1 &&
         !structural.unterminated &&
         structural.yamlErrors.length === 0;
 

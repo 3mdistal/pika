@@ -3318,6 +3318,21 @@ tags: later
       expect(issue.autoFixable).toBe(true);
     });
 
+    it('should ignore non-frontmatter delimiter blocks', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Body Rules.md'),
+        `Intro line\n---\nNot frontmatter\n---\nBody\n`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--output', 'json'], tempVaultDir);
+
+      const output = JSON.parse(result.stdout);
+      const file = output.files.find((f: { path: string }) => f.path.includes('Body Rules.md'));
+      expect(file).toBeDefined();
+      const issue = file.issues.find((i: { code: string }) => i.code === 'frontmatter-not-at-top');
+      expect(issue).toBeUndefined();
+    });
+
     it('should auto-fix frontmatter to the top', async () => {
       await writeFile(
         join(tempVaultDir, 'Ideas', 'Fix Misplaced.md'),

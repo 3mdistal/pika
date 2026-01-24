@@ -17,6 +17,7 @@ export interface FrontmatterBlock {
 export interface StructuralFrontmatterInfo {
   raw: string;
   blocks: FrontmatterBlock[];
+  frontmatterBlocks: FrontmatterBlock[];
   unterminated: boolean;
   primaryBlock: FrontmatterBlock | null;
   /** YAML content for the primary block (no delimiters) */
@@ -33,6 +34,11 @@ export interface StructuralFrontmatterInfo {
 
 function stripBom(value: string): string {
   return value.startsWith('\uFEFF') ? value.slice(1) : value;
+}
+
+function isBlockAtTop(raw: string, block: FrontmatterBlock): boolean {
+  const prefix = stripBom(raw.slice(0, block.blockStart));
+  return prefix.trim().length === 0;
 }
 
 function isDelimiterLine(line: string): boolean {
@@ -88,78 +94,82 @@ function findFrontmatterBlocks(raw: string): { blocks: FrontmatterBlock[]; unter
 
 export function readStructuralFrontmatterFromRaw(raw: string): StructuralFrontmatterInfo {
   const { blocks, unterminated } = findFrontmatterBlocks(raw);
-  const primaryBlock = blocks.length > 0 ? blocks[0]! : null;
-
-  const yaml = primaryBlock ? raw.slice(primaryBlock.yamlStart, primaryBlock.yamlEnd) : null;
-
+  const frontmatterBlocks: FrontmatterBlock[] = [];
+  let primaryBlock: FrontmatterBlock | null = null;
+  let yaml: string | null = null;
   let doc: Document.Parsed | null = null;
   let frontmatter: Record<string, unknown> = {};
   let yamlErrors: string[] = [];
+  let atTop = true;
 
-  if (yaml !== null) {
-    doc = parseDocument(yaml);
-    yamlErrors = doc.errors.map((e) => e.message);
+  for (const block of blocks) {
+    const candidateYaml = raw.slice(block.yamlStart, block.yamlEnd);
+    const candidateDoc = parseDocument(candidateYaml);
+    const contents = candidateDoc.contents as ParsedNode | null;
+    const blockAtTop = isBlockAtTop(raw, block);
+    const isMapLike = contents === null || isMap(contents);
+    const isFrontmatter = isMapLike && (contents !== null || blockAtTop);
 
-    // Only treat map/null docs as usable frontmatter; otherwise ignore.
-    const contents = doc.contents as ParsedNode | null;
-    if (contents === null || isMap(contents)) {
-      try {
-        const json = doc.toJSON() as unknown;
-        if (json && typeof json === 'object' && !Array.isArray(json)) {
-          frontmatter = normalizeYamlValue(json) as Record<string, unknown>;
-        } else {
-          frontmatter = {};
-        }
-      } catch {
-        // Fall back to a best-effort parse so we can still inspect frontmatter,
-        // even when the YAML library can't convert (e.g., duplicate keys).
+    if (!isFrontmatter) {
+      continue;
+    }
+
+    frontmatterBlocks.push(block);
+
+    if (primaryBlock) {
+      continue;
+    }
+
+    primaryBlock = block;
+    yaml = candidateYaml;
+    doc = candidateDoc;
+    yamlErrors = candidateDoc.errors.map((e: { message: string }) => e.message);
+    atTop = blockAtTop;
+
+    try {
+      const json = candidateDoc.toJSON() as unknown;
+      if (json && typeof json === 'object' && !Array.isArray(json)) {
+        frontmatter = normalizeYamlValue(json) as Record<string, unknown>;
+      } else {
         frontmatter = {};
+      }
+    } catch {
+      frontmatter = {};
 
-        if (contents && isMap(contents)) {
-          const map = contents as YAMLMap;
-          for (const pair of map.items as Pair[]) {
-            const key = String((pair.key as Scalar | null | undefined)?.value ?? '');
-            if (!key) continue;
+      if (contents && isMap(contents)) {
+        const map = contents as YAMLMap;
+        for (const pair of map.items as Pair[]) {
+          const key = String((pair.key as Scalar | null | undefined)?.value ?? '');
+          if (!key) continue;
 
-            const valueNode = (pair as { value?: unknown }).value;
-            if (valueNode && typeof valueNode === 'object') {
-              const toJson = (valueNode as Record<string, unknown>)['toJSON'];
-              if (typeof toJson === 'function') {
-                try {
-                  frontmatter[key] = normalizeYamlValue((toJson as () => unknown)());
-                  continue;
-                } catch {
-                  // Fall through
-                }
-              }
-
-              if ('value' in (valueNode as Record<string, unknown>)) {
-                frontmatter[key] = normalizeYamlValue((valueNode as Record<string, unknown>)['value']);
+          const valueNode = (pair as { value?: unknown }).value;
+          if (valueNode && typeof valueNode === 'object') {
+            const toJson = (valueNode as Record<string, unknown>)['toJSON'];
+            if (typeof toJson === 'function') {
+              try {
+                frontmatter[key] = normalizeYamlValue((toJson as () => unknown)());
                 continue;
+              } catch {
+                // Fall through
               }
             }
 
-            frontmatter[key] = normalizeYamlValue(valueNode ?? null);
+            if ('value' in (valueNode as Record<string, unknown>)) {
+              frontmatter[key] = normalizeYamlValue((valueNode as Record<string, unknown>)['value']);
+              continue;
+            }
           }
+
+          frontmatter[key] = normalizeYamlValue(valueNode ?? null);
         }
       }
-    } else {
-      // Not a mapping frontmatter; ignore.
-      doc = null;
-      yamlErrors = [];
-      frontmatter = {};
     }
-  }
-
-  let atTop = true;
-  if (primaryBlock) {
-    const prefix = stripBom(raw.slice(0, primaryBlock.blockStart));
-    atTop = prefix.trim().length === 0;
   }
 
   return {
     raw,
     blocks,
+    frontmatterBlocks,
     unterminated,
     primaryBlock,
     yaml,
