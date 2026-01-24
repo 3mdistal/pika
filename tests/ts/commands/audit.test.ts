@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { createTestVault, cleanupTestVault, runCLI, TEST_SCHEMA } from '../fixtures/setup.js';
@@ -3079,6 +3079,69 @@ tag: urgent
       const content = await readFile(join(tempVaultDir, 'Ideas', 'Fix Plural.md'), 'utf-8');
       expect(content).toContain('tags: urgent');
       expect(content).not.toContain('tag:');
+    });
+  });
+
+  describe('audit --fix messaging', () => {
+    let tempVaultDir: string;
+
+    beforeEach(async () => {
+      tempVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-audit-fix-message-'));
+      await mkdir(join(tempVaultDir, '.bwrb'), { recursive: true });
+      await writeFile(
+        join(tempVaultDir, '.bwrb', 'schema.json'),
+        JSON.stringify(TEST_SCHEMA, null, 2)
+      );
+      await mkdir(join(tempVaultDir, 'Ideas'), { recursive: true });
+    });
+
+    afterEach(async () => {
+      await rm(tempVaultDir, { recursive: true, force: true });
+    });
+
+    it('should avoid --execute guidance in dry-run mode', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Dry Run.md'),
+        `---
+type: idea
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(
+        ['audit', '--fix', '--auto', '--path', 'Ideas/**', '--dry-run'],
+        tempVaultDir
+      );
+
+      expect(result.stdout).toContain('Dry run');
+      expect(result.stdout).toContain("Re-run without '--dry-run'");
+      expect(result.stdout).not.toContain('--execute');
+
+      const content = await readFile(join(tempVaultDir, 'Ideas', 'Dry Run.md'), 'utf-8');
+      expect(content).not.toContain('status:');
+    });
+
+    it('should confirm applied fixes without --execute guidance', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Applied Fix.md'),
+        `---
+type: idea
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(
+        ['audit', '--fix', '--auto', '--path', 'Ideas/**'],
+        tempVaultDir
+      );
+
+      expect(result.stdout).toContain('Applied fixes');
+      expect(result.stdout).not.toContain('--execute');
+
+      const content = await readFile(join(tempVaultDir, 'Ideas', 'Applied Fix.md'), 'utf-8');
+      expect(content).toContain('status: raw');
     });
   });
 });
