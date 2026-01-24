@@ -18,6 +18,7 @@ import { loadSchema, detectObsidianVault } from '../lib/schema.js';
 import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { promptInput, promptSelection } from '../lib/prompt.js';
 import { getGlobalOpts } from '../lib/command.js';
+import { ExitCodes } from '../lib/output.js';
 import type { Config } from '../types/schema.js';
 import { UserCancelledError } from '../lib/errors.js';
 
