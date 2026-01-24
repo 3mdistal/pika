@@ -85,6 +85,7 @@ Targeting Options:
   --path <glob>     Filter by file path pattern
   --where <expr>    Filter by frontmatter expression
   --body <query>    Filter by body content
+  --all             Target all files (explicit vault-wide selector)
 
 Examples:
   bwrb audit                      # Check all files (report only)
