@@ -41,7 +41,7 @@ The target argument is auto-detected as type, path (contains `/`), or where expr
 | `--fix` | Interactive repair mode (writes by default; requires explicit targeting) |
 | `--auto` | With `--fix`: automatically apply unambiguous fixes |
 | `--dry-run` | With `--fix`: preview fixes without writing |
-| `--execute` | Deprecated: no longer required for audit fixes |
+| `--execute` | With `--fix --auto`: apply fixes (omit to preview) |
 
 ### Output
 

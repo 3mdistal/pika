@@ -213,13 +213,15 @@ Examples:
         });
 
         if (!hasTargetingForFix) {
-          printError('No files selected. Refusing to run --fix without explicit targeting because it writes by default; use --all (vault-wide) or --type/--path/--where/--body. Example: bwrb audit --all --fix');
+          printError('No files selected. Refusing to run --fix without explicit targeting because it can write changes; use --all (vault-wide) or --type/--path/--where/--body. Example: bwrb audit --all --fix');
           process.exit(1);
         }
       }
 
-      if (executeMode) {
-        printWarning('Warning: --execute will apply fixes; omit it to preview changes.');
+      if (executeMode && autoMode) {
+        printWarning('Warning: --execute will apply auto-fixes; omit it to preview changes.');
+      } else if (executeMode) {
+        printWarning('Warning: --execute has no effect without --auto; interactive --fix writes by default.');
       }
 
       // Validate type if specified

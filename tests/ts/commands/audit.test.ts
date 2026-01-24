@@ -2305,7 +2305,7 @@ status: raw
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No files selected.');
-      expect(result.stderr).toContain('writes by default');
+      expect(result.stderr).toContain('can write changes');
       expect(result.stderr).toContain('bwrb audit --all --fix');
     });
   });
