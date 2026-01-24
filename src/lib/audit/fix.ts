@@ -650,6 +650,9 @@ export async function runAutoFix(
   dryRunStorage.enterWith(dryRun);
   
   console.log(chalk.bold('Auditing vault...\n'));
+  if (dryRun) {
+    console.log(chalk.yellow("Dry run - no changes will be made (re-run without '--dry-run' to apply)\n"));
+  }
   console.log(chalk.bold('Auto-fixing unambiguous issues...\n'));
 
   let fixed = 0;
@@ -1110,6 +1113,9 @@ export async function runInteractiveFix(
   const context: FixContext = { schema, vaultDir, dryRun };
   
   console.log(chalk.bold('Auditing vault...\n'));
+  if (dryRun) {
+    console.log(chalk.yellow("Dry run - no changes will be made (re-run without '--dry-run' to apply)\n"));
+  }
 
   if (results.length === 0) {
     console.log(chalk.green('✓ No issues found\n'));
