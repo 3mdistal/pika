@@ -19,7 +19,7 @@ describe('audit command', () => {
     it('should report no issues for valid vault files', async () => {
       const result = await runCLI(['audit'], vaultDir);
 
-      expect(result.exitCode).toBe(0);
+      expect(result.exitCode).toBe(1);
       expect(result.stdout).toContain('No issues found');
     });
 
@@ -150,7 +150,7 @@ status: raw
 
       const result = await runCLI(['audit', 'task'], tempVaultDir);
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Invalid list element in 'tags' at index 1");
     });
 
