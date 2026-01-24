@@ -87,6 +87,20 @@ function getValueShape(value: unknown): ValueShape {
   return 'unknown';
 }
 
+function maybeUnquoteFormattedLink(value: string): string {
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2 &&
+    trimmed.startsWith('"') &&
+    trimmed.endsWith('"') &&
+    trimmed.includes('[[') &&
+    trimmed.includes(']]')
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return value;
+}
+
 function getExpectedFieldShape(field: Field | undefined): ValueShape {
   if (!field || !field.prompt) return 'unknown';
 
@@ -373,6 +387,20 @@ async function applyFix(
           frontmatter[issue.field] = newValue;
         } else {
           return { file: filePath, issue, action: 'failed', message: 'No value provided' };
+        }
+        break;
+      }
+
+      case 'self-reference':
+      case 'ambiguous-link-target': {
+        if (!issue.field || typeof newValue !== 'string') {
+          return { file: filePath, issue, action: 'failed', message: 'No field or value provided' };
+        }
+
+        if (newValue.length === 0) {
+          delete frontmatter[issue.field];
+        } else {
+          frontmatter[issue.field] = maybeUnquoteFormattedLink(newValue);
         }
         break;
       }
