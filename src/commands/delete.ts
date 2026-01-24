@@ -14,7 +14,8 @@ import { Command } from 'commander';
 import { basename } from 'path';
 import { unlink } from 'fs/promises';
 import { spawn } from 'child_process';
-import { resolveVaultDir, isFile } from '../lib/vault.js';
+import { isFile } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { loadSchema } from '../lib/schema.js';
 import {
@@ -191,7 +192,10 @@ Note: Deletion is permanent. The file is removed from the filesystem.
     }
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Handle --text deprecation

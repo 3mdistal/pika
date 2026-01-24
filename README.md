@@ -47,8 +47,12 @@ Create a `.bwrb/schema.json` in each vault you want to use with bwrb.
 ```sh
 # Vault path resolution (in order of precedence):
 # 1. --vault=<path> or -v <path> argument
-# 2. BWRB_VAULT environment variable  
-# 3. Current working directory
+# 2. Find-up: nearest ancestor with .bwrb/schema.json
+# 3. BWRB_VAULT environment variable
+# 4. Find-down under cwd if not in a vault:
+#    - 1 candidate => auto-select
+#    - multiple => numbered picker (TTY) or error requiring --vault
+#      (non-TTY or --output json)
 
 # Interactive mode - prompts for type selection
 bwrb new

@@ -113,6 +113,12 @@ export interface ErrorCandidate {
   relativePath: string;
 }
 
+export interface VaultErrorDetails {
+  cwd: string;
+  candidates: string[];
+  truncated?: boolean;
+}
+
 /**
  * Exit with a resolution error, optionally showing candidates.
  * 
@@ -147,4 +153,39 @@ export function exitWithResolutionError(
     }
   }
   process.exit(1);
+}
+
+/**
+ * Exit with a vault resolution error, optionally showing candidates.
+ *
+ * In JSON mode, candidates are included in the errors array.
+ * In text mode, candidates are listed after the error message.
+ */
+export function exitWithVaultResolutionError(
+  details: VaultErrorDetails,
+  jsonMode: boolean
+): never {
+  const error = `Multiple vaults found under ${details.cwd}. Re-run with --vault <path>.`;
+
+  if (jsonMode) {
+    const errors = details.candidates.map(candidate => ({
+      field: 'candidate',
+      value: candidate,
+      message: 'Candidate vault',
+    }));
+    printJson(jsonError(error, { code: ExitCodes.VALIDATION_ERROR, errors }));
+    process.exit(ExitCodes.VALIDATION_ERROR);
+  }
+
+  console.error(chalk.red(error));
+  if (details.candidates.length > 0) {
+    console.error('\nCandidate vaults:');
+    for (const candidate of details.candidates) {
+      console.error(`  ${candidate}`);
+    }
+    if (details.truncated) {
+      console.error('  (truncated)');
+    }
+  }
+  process.exit(ExitCodes.VALIDATION_ERROR);
 }
