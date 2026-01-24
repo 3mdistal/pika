@@ -2541,9 +2541,9 @@ priority: medium
       expect(wsIssue).toBeDefined();
       expect(wsIssue.field).toBe('status');
       expect(wsIssue.autoFixable).toBe(true);
-      expect(wsIssue.before).toBe('status: raw  ');
-      expect(wsIssue.after).toBe('status: raw');
-      expect(wsIssue.line).toBe(3);
+      expect(wsIssue.meta.before).toBe('status: raw  ');
+      expect(wsIssue.meta.after).toBe('status: raw');
+      expect(wsIssue.meta.line).toBe(3);
     });
 
     it('should detect trailing whitespace after closing quote', async () => {
@@ -2565,9 +2565,9 @@ priority: medium
       const wsIssue = file.issues.find((i: { code: string }) => i.code === 'trailing-whitespace');
       expect(wsIssue).toBeDefined();
       expect(wsIssue.field).toBe('status');
-      expect(wsIssue.line).toBe(3);
-      expect(wsIssue.before).toBe('  status: "raw"  ');
-      expect(wsIssue.after).toBe('  status: "raw"');
+      expect(wsIssue.meta.line).toBe(3);
+      expect(wsIssue.meta.before).toBe('  status: "raw"  ');
+      expect(wsIssue.meta.after).toBe('  status: "raw"');
     });
 
     it('should not flag whitespace inside quotes', async () => {
@@ -2689,9 +2689,9 @@ archived: "true"
       expect(boolIssue).toBeDefined();
       expect(boolIssue.field).toBe('archived');
       expect(boolIssue.autoFixable).toBe(true);
-      expect(boolIssue.before).toBe('true');
-      expect(boolIssue.after).toBe(true);
-      expect(boolIssue.coercedTo).toBe(true);
+      expect(boolIssue.meta.before).toBe('true');
+      expect(boolIssue.meta.after).toBe(true);
+      expect(boolIssue.meta.coercedTo).toBe(true);
     });
 
     it('should not flag non-boolean string values', async () => {
@@ -2778,10 +2778,10 @@ priority: medium
       expect(casingIssue.field).toBe('status');
       expect(casingIssue.canonicalValue).toBe('raw');
       expect(casingIssue.autoFixable).toBe(true);
-      expect(casingIssue.suggested).toBe('raw');
-      expect(casingIssue.matchedBy).toBe('case-insensitive');
-      expect(casingIssue.before).toBe('Raw');
-      expect(casingIssue.after).toBe('raw');
+      expect(casingIssue.meta.suggested).toBe('raw');
+      expect(casingIssue.meta.matchedBy).toBe('case-insensitive');
+      expect(casingIssue.meta.before).toBe('Raw');
+      expect(casingIssue.meta.after).toBe('raw');
     });
 
     it('should not auto-fix when enum casing is ambiguous', async () => {
@@ -2825,7 +2825,7 @@ priority: medium
       const casingIssue = file.issues.find((i: { code: string }) => i.code === 'unknown-enum-casing');
       expect(casingIssue).toBeDefined();
       expect(casingIssue.autoFixable).toBe(false);
-      expect(casingIssue.candidates).toEqual(['raw', 'RAW']);
+      expect(casingIssue.meta.candidates).toEqual(['raw', 'RAW']);
     });
 
     it('should auto-fix enum casing', async () => {
@@ -2894,8 +2894,8 @@ tags:
       expect(dupIssue).toBeDefined();
       expect(dupIssue.field).toBe('tags');
       expect(dupIssue.autoFixable).toBe(true);
-      expect(dupIssue.duplicates).toEqual(['urgent']);
-      expect(dupIssue.removedCount).toBe(1);
+      expect(dupIssue.meta.duplicates).toEqual(['urgent']);
+      expect(dupIssue.meta.removedCount).toBe(1);
     });
 
     it('should auto-fix duplicate list values', async () => {
@@ -2968,10 +2968,10 @@ priority: medium
       expect(keyIssue.field).toBe('Status');
       expect(keyIssue.canonicalKey).toBe('status');
       expect(keyIssue.autoFixable).toBe(true);
-      expect(keyIssue.fromKey).toBe('Status');
-      expect(keyIssue.toKey).toBe('status');
-      expect(keyIssue.before).toBe('Status');
-      expect(keyIssue.after).toBe('status');
+      expect(keyIssue.meta.fromKey).toBe('Status');
+      expect(keyIssue.meta.toKey).toBe('status');
+      expect(keyIssue.meta.before).toBe('Status');
+      expect(keyIssue.meta.after).toBe('status');
     });
 
     it('should auto-fix key casing', async () => {
@@ -3020,8 +3020,8 @@ priority: medium
       expect(keyIssue.hasConflict).toBe(true);
       // Should not be auto-fixable when both have values
       expect(keyIssue.autoFixable).toBe(false);
-      expect(keyIssue.fromKey).toBe('Status');
-      expect(keyIssue.toKey).toBe('status');
+      expect(keyIssue.meta.fromKey).toBe('Status');
+      expect(keyIssue.meta.toKey).toBe('status');
     });
   });
 

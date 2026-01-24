@@ -93,7 +93,7 @@ export function outputJsonResults(results: FileAuditResult[], summary: AuditSumm
         ...(i.duplicateCount !== undefined && { duplicateCount: i.duplicateCount }),
         ...(i.listIndex !== undefined && { listIndex: i.listIndex }),
         ...(i.fixedValue && { fixedValue: i.fixedValue }),
-        ...(i.meta ?? {}),
+        ...(i.meta !== undefined && { meta: i.meta }),
       })),
     })),
     summary,
