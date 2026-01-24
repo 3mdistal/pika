@@ -202,7 +202,11 @@ export function outputFixResults(summary: FixSummary, autoMode: boolean): void {
 
   if (summary.dryRun) {
     console.log('');
-    console.log(chalk.dim("Re-run without '--dry-run' to apply changes."));
+    if (summary.dryRunReason === 'execute-required') {
+      console.log(chalk.dim("Re-run with '--execute' to apply fixes."));
+    } else {
+      console.log(chalk.dim("Re-run without '--dry-run' to apply changes."));
+    }
   }
 }
 

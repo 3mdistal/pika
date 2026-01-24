@@ -643,9 +643,10 @@ export async function runAutoFix(
   results: FileAuditResult[],
   schema: LoadedSchema,
   vaultDir: string,
-  options?: { dryRun?: boolean }
+  options?: { dryRun?: boolean; dryRunReason?: FixSummary['dryRunReason'] }
 ): Promise<FixSummary> {
   const dryRun = options?.dryRun ?? false;
+  const dryRunReason = dryRun ? options?.dryRunReason : undefined;
   dryRunStorage.enterWith(dryRun);
   
   console.log(chalk.bold('Auditing vault...\n'));
@@ -1082,6 +1083,7 @@ export async function runAutoFix(
 
   return {
     dryRun,
+    dryRunReason,
     fixed,
     skipped,
     failed,
@@ -1103,6 +1105,7 @@ export async function runInteractiveFix(
   options?: { dryRun?: boolean }
 ): Promise<FixSummary> {
   const dryRun = options?.dryRun ?? false;
+  const dryRunReason = dryRun ? 'explicit' : undefined;
   dryRunStorage.enterWith(dryRun);
   const context: FixContext = { schema, vaultDir, dryRun };
   
@@ -1110,7 +1113,7 @@ export async function runInteractiveFix(
 
   if (results.length === 0) {
     console.log(chalk.green('✓ No issues found\n'));
-    return { dryRun, fixed: 0, skipped: 0, failed: 0, remaining: 0 };
+    return { dryRun, dryRunReason, fixed: 0, skipped: 0, failed: 0, remaining: 0 };
   }
 
   let fixed = 0;
@@ -1154,7 +1157,7 @@ export async function runInteractiveFix(
   }
   remaining = remaining - fixed;
 
-  return { dryRun, fixed, skipped, failed, remaining };
+  return { dryRun, dryRunReason, fixed, skipped, failed, remaining };
 }
 
 /**

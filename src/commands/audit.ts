@@ -266,8 +266,19 @@ Examples:
           process.exit(1);
         }
 
+        const executeRequiredIssueCodes = new Set<IssueCode>(['trailing-whitespace']);
+        const hasExecuteRequiredIssues = autoMode && !executeMode && results.some(result =>
+          result.issues.some(issue => issue.autoFixable && executeRequiredIssueCodes.has(issue.code))
+        );
+        const autoFixDryRun = dryRunMode || hasExecuteRequiredIssues;
+        const autoFixDryRunReason = dryRunMode
+          ? 'explicit'
+          : hasExecuteRequiredIssues
+            ? 'execute-required'
+            : undefined;
+
         const fixSummary = autoMode
-          ? await runAutoFix(results, schema, vaultDir, { dryRun: dryRunMode })
+          ? await runAutoFix(results, schema, vaultDir, { dryRun: autoFixDryRun, dryRunReason: autoFixDryRunReason })
           : await runInteractiveFix(results, schema, vaultDir, { dryRun: dryRunMode });
 
         outputFixResults(fixSummary, autoMode);
