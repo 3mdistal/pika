@@ -19,6 +19,7 @@ import { readStructuralFrontmatter } from './structural.js';
 import { isEmptyRequiredValue } from './emptiness.js';
 import { coerceBooleanFromString, coerceNumberFromString } from './coercion.js';
 import { suggestIsoDate } from './date-suggest.js';
+import { extractYamlNodeValue, isEffectivelyEmpty } from './value-utils.js';
 import { isMap } from 'yaml';
 import type { Pair, Scalar, YAMLMap } from 'yaml';
 import { isDeepStrictEqual } from 'node:util';
@@ -507,16 +508,6 @@ export async function auditFile(
   return issues;
 }
 
-function isEffectivelyEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string' && value.trim().length === 0) return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.keys(value as Record<string, unknown>).length === 0;
-  }
-  return false;
-}
-
 type ResolvedRelationTarget = {
   rawTarget: string;
   candidates: string[];
@@ -715,7 +706,6 @@ function checkListElementIntegrity(
 
   return issues;
 }
-
 function repairNearWikilink(trimmed: string): string | null {
   if (trimmed.startsWith('[[') && trimmed.endsWith(']') && !trimmed.endsWith(']]')) {
     return `${trimmed}]`;
@@ -765,25 +755,7 @@ function collectStructuralIssues(
     for (const [key, pairs] of groups.entries()) {
       if (!key || pairs.length < 2) continue;
 
-      const values = pairs.map((p) => {
-        const valueNode = (p as { value?: unknown }).value;
-        if (valueNode && typeof valueNode === 'object') {
-          const record = valueNode as Record<string, unknown>;
-          const toJson = record['toJSON'];
-          if (typeof toJson === 'function') {
-            try {
-              return (toJson as () => unknown)();
-            } catch {
-              // Fall through
-            }
-          }
-
-          if ('value' in record) {
-            return record['value'];
-          }
-        }
-        return null;
-      });
+      const values = pairs.map((p) => extractYamlNodeValue((p as { value?: unknown }).value));
       const nonEmptyValues = values.filter((v: unknown) => !isEffectivelyEmpty(v));
 
       let autoFixable = false;
@@ -1616,7 +1588,11 @@ function checkFrontmatterKeyCasing(
   // 2. But a case-insensitive match exists
   if (canonicalKey && canonicalKey !== fieldName) {
     // Check if canonical key already exists in frontmatter
-    const hasConflict = canonicalKey in frontmatter;
+    const existingValue = frontmatter[canonicalKey];
+    const hasConflict =
+      canonicalKey in frontmatter &&
+      !isEffectivelyEmpty(existingValue) &&
+      !isEffectivelyEmpty(value);
     
     return {
       severity: 'warning',
@@ -1627,9 +1603,9 @@ function checkFrontmatterKeyCasing(
       field: fieldName,
       value: value,
       canonicalKey: canonicalKey,
-      autoFixable: !hasConflict || isEmpty(frontmatter[canonicalKey]),
+      autoFixable: !hasConflict,
       hasConflict: hasConflict,
-      ...(hasConflict && { conflictValue: frontmatter[canonicalKey] }),
+      ...(hasConflict && { conflictValue: existingValue }),
     };
   }
   
@@ -1652,7 +1628,11 @@ function checkSingularPluralMismatch(
   // Check singular → plural (add 's')
   const pluralForm = fieldName + 's';
   if (schemaFieldNames.has(pluralForm)) {
-    const hasConflict = pluralForm in frontmatter;
+    const existingValue = frontmatter[pluralForm];
+    const hasConflict =
+      pluralForm in frontmatter &&
+      !isEffectivelyEmpty(existingValue) &&
+      !isEffectivelyEmpty(value);
     return {
       severity: 'warning',
       code: 'singular-plural-mismatch',
@@ -1662,9 +1642,9 @@ function checkSingularPluralMismatch(
       field: fieldName,
       value: value,
       canonicalKey: pluralForm,
-      autoFixable: !hasConflict || isEmpty(frontmatter[pluralForm]),
+      autoFixable: !hasConflict,
       hasConflict: hasConflict,
-      ...(hasConflict && { conflictValue: frontmatter[pluralForm] }),
+      ...(hasConflict && { conflictValue: existingValue }),
     };
   }
   
@@ -1672,7 +1652,11 @@ function checkSingularPluralMismatch(
   if (fieldName.endsWith('s') && fieldName.length > 1) {
     const singularForm = fieldName.slice(0, -1);
     if (schemaFieldNames.has(singularForm)) {
-      const hasConflict = singularForm in frontmatter;
+      const existingValue = frontmatter[singularForm];
+      const hasConflict =
+        singularForm in frontmatter &&
+        !isEffectivelyEmpty(existingValue) &&
+        !isEffectivelyEmpty(value);
       return {
         severity: 'warning',
         code: 'singular-plural-mismatch',
@@ -1682,24 +1666,14 @@ function checkSingularPluralMismatch(
         field: fieldName,
         value: value,
         canonicalKey: singularForm,
-        autoFixable: !hasConflict || isEmpty(frontmatter[singularForm]),
+        autoFixable: !hasConflict,
         hasConflict: hasConflict,
-        ...(hasConflict && { conflictValue: frontmatter[singularForm] }),
+        ...(hasConflict && { conflictValue: existingValue }),
       };
     }
   }
   
   return null;
-}
-
-/**
- * Check if a value is empty (null, undefined, empty string, or empty array).
- */
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (value === '') return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  return false;
 }
 
 // ============================================================================

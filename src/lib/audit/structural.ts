@@ -1,6 +1,7 @@
 import { readFile } from 'fs/promises';
 import { parseDocument, isMap, isSeq } from 'yaml';
 import type { Document, ParsedNode, YAMLMap, Pair, YAMLSeq, Scalar } from 'yaml';
+import { detectEol, normalizeYamlValue } from './value-utils.js';
 
 export interface FrontmatterBlock {
   /** Index of the opening delimiter line start */
@@ -32,33 +33,6 @@ export interface StructuralFrontmatterInfo {
 
 function stripBom(value: string): string {
   return value.startsWith('\uFEFF') ? value.slice(1) : value;
-}
-
-function formatYamlDate(date: Date): string {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeYamlValue(value: unknown): unknown {
-  if (value instanceof Date) {
-    return formatYamlDate(value);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeYamlValue(item));
-  }
-
-  if (value && typeof value === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
-      result[key] = normalizeYamlValue(inner);
-    }
-    return result;
-  }
-
-  return value;
 }
 
 function isDelimiterLine(line: string): boolean {
@@ -206,7 +180,8 @@ export function replacePrimaryYaml(
   block: FrontmatterBlock,
   newYaml: string
 ): string {
-  const yamlBody = newYaml.trimEnd() + '\n';
+  const eol = detectEol(raw);
+  const yamlBody = newYaml.trimEnd().replace(/\n/g, eol) + eol;
   return raw.slice(0, block.yamlStart) + yamlBody + raw.slice(block.yamlEnd);
 }
 
