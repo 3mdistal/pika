@@ -204,10 +204,21 @@ bwrb list --type task --output tree      # Hierarchical display
 bwrb search "TODO" --output content      # Full file with matches
 ```
 
+## Pagination (interactive picker)
+
+When a command needs you to pick from multiple results, Bowerbird uses an interactive picker. The pagination keys below apply to the **numbered** picker (and `auto` when it falls back to numbered). If you use `--picker fzf`, fzf provides its own navigation.
+
+- Page size: 10 items
+- Keys: `-` previous page, `+`/`=` next page
+- `1-9` / `0` selects immediately on the current page
+- `Enter` confirms the highlighted item
+- `Ctrl+C` / `Escape` cancels the picker
+
+`--output json` is never interactive and never paginates.
+
 ## See Also
 
 - [CLI Safety and Flags](/concepts/cli-safety-and-flags/) — `--execute` vs `--force` semantics
 - [Expression syntax](/concepts/schema/) — Query expression details
 - [bwrb list](/reference/commands/list/) — List and filter notes
 - [bwrb bulk](/reference/commands/bulk/) — Batch operations
-
