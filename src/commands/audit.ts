@@ -49,6 +49,15 @@ import {
   showAvailableTypes,
 } from '../lib/audit/output.js';
 
+const FIX_TARGETING_ERROR_MESSAGE = [
+  'No files selected. Use --type, --path, --where, --body, or --all.',
+  'Audit without --fix is read-only and defaults to all files.',
+  '--fix requires explicit targeting for safety (use selectors or --all).',
+  'Examples:',
+  '  bwrb audit --all --fix',
+  '  bwrb audit --all --fix --dry-run --auto',
+].join('\n');
+
 // ============================================================================
 // Command Definition
 // ============================================================================
@@ -83,6 +92,11 @@ Targeting Options:
   --where <expr>    Filter by frontmatter expression
   --body <query>    Filter by body content
 
+Safety:
+  bwrb audit (no selectors) defaults to all files because it is read-only.
+  bwrb audit --fix requires explicit targeting (selectors or --all) and writes by default.
+  Use --dry-run to preview fixes without writing.
+
 Examples:
   bwrb audit                      # Check all files (report only)
   bwrb audit --type objective/task  # Check only tasks
@@ -94,6 +108,7 @@ Examples:
   bwrb audit --ignore unknown-field
   bwrb audit --output json        # JSON output for CI
   bwrb audit --allow-field custom # Allow specific extra field
+  bwrb audit --all --fix           # Fix issues across entire vault
   bwrb audit --fix --path "Ideas/**"             # Interactive guided fixes (writes)
   bwrb audit --fix --dry-run --path "Ideas/**"    # Preview guided fixes (no writes)
   bwrb audit --fix --auto --path "Ideas/**"       # Auto-fix unambiguous issues (writes)
@@ -211,7 +226,7 @@ Examples:
         });
 
         if (!hasTargetingForFix) {
-          printError('No files selected. Use --type, --path, --where, --body, or --all.');
+          printError(FIX_TARGETING_ERROR_MESSAGE);
           process.exit(1);
         }
       }

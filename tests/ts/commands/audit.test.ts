@@ -2181,6 +2181,25 @@ status: raw
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No files selected. Use --type, --path, --where, --body, or --all.');
+      expect(result.stderr).toContain('Audit without --fix is read-only');
+      expect(result.stderr).toContain('bwrb audit --all --fix');
+      expect(result.stderr).toContain('--dry-run');
+    });
+
+    it('should allow --fix when --all is provided', async () => {
+      const result = await runCLI(['audit', '--fix', '--all'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe('help and usage', () => {
+    it('should document safety note and explicit --all --fix example', async () => {
+      const result = await runCLI(['audit', '--help'], vaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('Safety:');
+      expect(result.stdout).toContain('bwrb audit --all --fix');
     });
   });
 

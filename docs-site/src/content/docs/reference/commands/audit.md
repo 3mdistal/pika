@@ -40,6 +40,9 @@ The target argument is auto-detected as type, path (contains `/`), or where expr
 | `--fix` | Interactive repair mode |
 | `--auto` | With `--fix`: automatically apply unambiguous fixes |
 
+Repair mode writes by default and requires explicit targeting (selectors or `--all`).
+Use `--dry-run` to preview fixes without writing.
+
 ### Output
 
 | Option | Description |
@@ -99,6 +102,12 @@ bwrb audit --allow-field custom --allow-field legacy
 ### Repair Mode
 
 ```bash
+# Fix issues across the entire vault (explicit targeting required)
+bwrb audit --all --fix
+
+# Preview fixes across the entire vault
+bwrb audit --all --fix --dry-run --auto
+
 # Interactive fix mode (writes by default; requires explicit targeting)
 bwrb audit --path "Ideas/**" --fix
 
