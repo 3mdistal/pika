@@ -22,6 +22,10 @@ All notable changes to Bowerbird are documented in this file.
 - **Vault auto-detection now uses nearest `.bwrb/schema.json` (find-up)** (#337)
   - Precedence: `--vault` > find-up > `BWRB_VAULT` > `cwd` (error if not a vault)
 
+### Fixed
+
+- **Owned note creation now writes `owner` frontmatter and uses the owning field folder** (#394)
+
 ### Added
 
 - **Stable system-managed note IDs** (#334)
