@@ -120,6 +120,10 @@ export async function applyFrontmatterFilters<T extends FileWithFrontmatter>(
     whereExpressions,
     effectiveKnownKeys
   );
+  const expressionPairs = normalizedExpressions.map((normalized, index) => ({
+    normalized,
+    original: whereExpressions[index] ?? normalized,
+  }));
 
   // Build hierarchy data if any expression uses hierarchy functions
   // This is done once before the loop for efficiency
@@ -133,22 +137,27 @@ export async function applyFrontmatterFilters<T extends FileWithFrontmatter>(
 
   for (const file of files) {
     // Apply expression filters (--where style)
-    if (normalizedExpressions.length > 0) {
+    if (expressionPairs.length > 0) {
       const context = await buildEvalContext(file.path, vaultDir, file.frontmatter);
       // Add hierarchy data to context if available
       if (hierarchyData) {
         context.hierarchyData = hierarchyData;
       }
-      const allMatch = normalizedExpressions.every(expr => {
+      let allMatch = true;
+      for (const { normalized, original } of expressionPairs) {
         try {
-          return matchesExpression(expr, context);
+          if (!matchesExpression(normalized, context)) {
+            allMatch = false;
+            break;
+          }
         } catch (e) {
           if (!silent) {
-            printError(`Expression error in "${expr}": ${(e as Error).message}`);
+            printError(`Expression error in "${original}": ${(e as Error).message}`);
           }
-          return false;
+          allMatch = false;
+          break;
         }
-      });
+      }
 
       if (!allMatch) {
         continue;

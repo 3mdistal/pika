@@ -1,4 +1,6 @@
-const IDENTIFIER_BODY = /[A-Za-z0-9_-]/;
+import { FRONTMATTER_IDENTIFIER } from './where-constants.js';
+
+const IDENTIFIER_BODY = /[A-Za-z0-9_]/;
 
 export function normalizeWhereExpressions(
   expressions: string[],
@@ -99,12 +101,16 @@ export function normalizeWhereExpression(
         continue;
       }
 
+      if (prev === '-' && hasLeftOperandBeforeMinus(expression, i - 1)) {
+        continue;
+      }
+
       matchedKey = key;
       break;
     }
 
     if (matchedKey) {
-      result += `__frontmatter['${matchedKey}']`;
+      result += `${FRONTMATTER_IDENTIFIER}['${escapeKey(matchedKey)}']`;
       i += matchedKey.length;
       continue;
     }
@@ -133,4 +139,27 @@ export function collectFrontmatterKeys(
 function isBoundary(char: string): boolean {
   if (!char) return true;
   return !IDENTIFIER_BODY.test(char);
+}
+
+function escapeKey(key: string): string {
+  return key.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function isIdentifierChar(char: string): boolean {
+  return IDENTIFIER_BODY.test(char);
+}
+
+function hasLeftOperandBeforeMinus(expression: string, minusIndex: number): boolean {
+  let i = minusIndex - 1;
+  while (i >= 0 && isWhitespace(expression[i] ?? '')) {
+    i -= 1;
+  }
+  if (i < 0) return false;
+  const ch = expression[i] ?? '';
+  if (isIdentifierChar(ch)) return true;
+  return ch === ')' || ch === ']' || ch === '"' || ch === "'";
+}
+
+function isWhitespace(char: string): boolean {
+  return /\s/.test(char);
 }

@@ -12,6 +12,7 @@ import type { LoadedSchema, Field } from '../types/schema.js';
 import { getFieldsForType, getAllFieldsForType } from './schema.js';
 import { suggestOptionValue, suggestFieldName } from './validation.js';
 import { normalizeWhereExpression } from './where-normalize.js';
+import { FRONTMATTER_IDENTIFIER } from './where-constants.js';
 
 // ============================================================================
 // Types
@@ -200,7 +201,7 @@ function getFieldName(node: Expression): string | null {
   }
 
   const objectName = (member.object as Identifier).name;
-  if (objectName !== '__frontmatter') {
+  if (objectName !== FRONTMATTER_IDENTIFIER) {
     return null;
   }
 
