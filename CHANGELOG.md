@@ -142,9 +142,10 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Fixed
 
+- **Clarify audit --fix targeting requirement in CLI help and error output** (#378)
+- **Report packaged version in `bwrb --version` output** (#379)
 - **Ensure npm publish artifacts include built CLI output** (#408)
   - Add prepack build and pack verification to prevent missing `dist/index.js`
-- **Report packaged version in `bwrb --version` output** (#379)
 - **Handle malformed frontmatter wikilink scalars without crashing audit fixes** (#354)
 - **Ignore slashes in note names when creating files** (#353)
 
