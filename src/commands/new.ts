@@ -92,7 +92,7 @@ type CreationMode = 'interactive' | 'json';
 
 type OwnershipMode =
   | { kind: 'pooled' }
-  | { kind: 'owned'; owner: OwnerNoteRef };
+  | { kind: 'owned'; owner: OwnerNoteRef; fieldName: string };
 
 interface PlannedNoteContent {
   frontmatter: Record<string, unknown>;
@@ -499,6 +499,8 @@ interface OwnershipDecision {
   isOwned: boolean;
   /** The owner note reference (if owned) */
   owner?: OwnerNoteRef;
+  /** The owner field name (if owned) */
+  fieldName?: string;
 }
 
 /**
@@ -916,8 +918,8 @@ async function resolveInteractiveOwnership(
   const canBeOwned = typeCanBeOwned(schema, typeName);
   if (canBeOwned && !standaloneArg) {
     const ownershipDecision = await resolveOwnership(schema, vaultDir, typeName, ownerArg);
-    if (ownershipDecision.isOwned && ownershipDecision.owner) {
-      return { kind: 'owned', owner: ownershipDecision.owner };
+    if (ownershipDecision.isOwned && ownershipDecision.owner && ownershipDecision.fieldName) {
+      return { kind: 'owned', owner: ownershipDecision.owner, fieldName: ownershipDecision.fieldName };
     }
   }
 
@@ -960,7 +962,11 @@ async function resolveJsonOwnership(
     if (!owner) {
       throwJsonError(jsonError(`Owner not found: ${ownerArg}`), ExitCodes.VALIDATION_ERROR);
     }
-    return { kind: 'owned', owner };
+    const fieldName = getOwnedFieldNameForOwner(schema, typeName, owner.ownerType);
+    if (!fieldName) {
+      throwJsonError(jsonError(`Owner type '${owner.ownerType}' does not own type '${typeName}'`), ExitCodes.SCHEMA_ERROR);
+    }
+    return { kind: 'owned', owner, fieldName };
   }
 
   return { kind: 'pooled' };
@@ -982,7 +988,11 @@ async function resolveOwnership(
     if (!owner) {
       throw new Error(`Owner not found: ${ownerArg}`);
     }
-    return { isOwned: true, owner };
+    const fieldName = getOwnedFieldNameForOwner(schema, typeName, owner.ownerType);
+    if (!fieldName) {
+      throw new Error(`Owner type '${owner.ownerType}' does not own type '${typeName}'`);
+    }
+    return { isOwned: true, owner, fieldName };
   }
   
   // Get possible owner types for this child type
@@ -1030,6 +1040,10 @@ async function resolveOwnership(
   }
   
   const selectedOwnerType = match[1]!;
+  const ownerInfo = ownerTypes.find(info => info.ownerType === selectedOwnerType);
+  if (!ownerInfo) {
+    return { isOwned: false };
+  }
   
   // Now prompt for which specific owner instance
   const owners = await findOwnerNotes(schema, vaultDir, selectedOwnerType);
@@ -1049,7 +1063,17 @@ async function resolveOwnership(
     throw new Error(`Owner not found: ${selectedOwner}`);
   }
   
-  return { isOwned: true, owner };
+  return { isOwned: true, owner, fieldName: ownerInfo.fieldName };
+}
+
+function getOwnedFieldNameForOwner(
+  schema: LoadedSchema,
+  childTypeName: string,
+  ownerTypeName: string
+): string | undefined {
+  const ownerTypes = getPossibleOwnerTypes(schema, childTypeName);
+  const ownerInfo = ownerTypes.find(info => info.ownerType === ownerTypeName);
+  return ownerInfo?.fieldName;
 }
 
 /**
@@ -1097,7 +1121,7 @@ async function writeNotePlan(
   fileExistsStrategy: FileExistsStrategy,
   skipInstances: boolean
 ): Promise<NoteCreationResult> {
-  const outputDir = await resolveOutputDir(args.schema, args.vaultDir, args.typePath, args.typeDef, args.ownership, args.mode);
+  const outputDir = await resolveOutputDir(args.schema, args.vaultDir, args.typePath, args.ownership, args.mode);
   const filePath = buildNotePath(outputDir, args.content.itemName, args.mode);
 
   if (existsSync(filePath)) {
@@ -1106,6 +1130,9 @@ async function writeNotePlan(
 
   const noteId = await generateUniqueNoteId(args.vaultDir);
   args.content.frontmatter['id'] = noteId;
+  if (args.ownership.kind === 'owned') {
+    args.content.frontmatter['owner'] = formatValue(args.ownership.owner.ownerName, args.schema.config.linkFormat);
+  }
   const orderedFields = ensureIdInFieldOrder(args.content.orderedFields);
 
   await writeNote(filePath, args.content.frontmatter, args.content.body, orderedFields);
@@ -1145,12 +1172,11 @@ async function resolveOutputDir(
   schema: LoadedSchema,
   vaultDir: string,
   typePath: string,
-  typeDef: ResolvedType,
   ownership: OwnershipMode,
   mode: CreationMode
 ): Promise<string> {
   if (ownership.kind === 'owned') {
-    return ensureOwnedOutputDir(ownership.owner.ownerPath, typeDef.name);
+    return ensureOwnedOutputDir(ownership.owner.ownerPath, ownership.fieldName);
   }
 
   const outputDir = getOutputDirForType(schema, typePath);

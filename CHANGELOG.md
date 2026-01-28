@@ -29,6 +29,10 @@ All notable changes to Bowerbird are documented in this file.
 - **Audit ignores built-in frontmatter fields written by `bwrb new`** (#395)
   - `id` and `name` no longer emit `unknown-field` warnings
 
+### Fixed
+
+- **Owned note creation now writes `owner` frontmatter and uses the owning field folder** (#394)
+
 ### Added
 
 - **Audit --fix Phase 5: Type coercion fixes** (#272)
