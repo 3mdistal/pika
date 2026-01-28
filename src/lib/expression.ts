@@ -211,6 +211,7 @@ function evaluateIdentifier(expr: Identifier, context: EvalContext): unknown {
 
   // Special 'file' object
   if (name === 'file') return context.file;
+  if (name === '__frontmatter') return context.frontmatter;
 
   // Look up in frontmatter
   return context.frontmatter[name];

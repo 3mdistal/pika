@@ -14,6 +14,7 @@ import {
   getOutputDir,
   getTypeFamilies,
   getDescendants,
+  getAllFieldsForType,
 } from '../schema.js';
 import { readStructuralFrontmatter } from './structural.js';
 import {
@@ -105,10 +106,14 @@ export async function runAudit(
       })
     );
     
+    const knownKeys = options.typePath
+      ? getAllFieldsForType(schema, options.typePath)
+      : null;
     const filtered = await applyFrontmatterFilters(filesWithFrontmatter, {
       whereExpressions: options.whereExpressions,
       vaultDir,
       silent: true,
+      ...(knownKeys ? { knownKeys } : {}),
     });
     
     // Map back to ManagedFile
