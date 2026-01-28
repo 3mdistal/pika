@@ -117,6 +117,13 @@ bwrb config edit date_format --json '"MM/DD/YYYY"'  # Non-interactive
 bwrb config edit excluded_directories --json '["Archive","Templates"]'
 ```
 
+## Built-in Frontmatter Fields
+
+Some fields are written by bwrb regardless of schema:
+
+- `id`: reserved/system-managed UUID created by `bwrb new` and should not be edited.
+- `name`: written by `bwrb new` as the note title; `bwrb audit` does not treat it as an unknown field even if the schema does not declare it.
+
 ## Core Commands for Agents
 
 ### Querying Notes
@@ -203,21 +210,32 @@ bwrb audit --type task
 # JSON output for parsing issues
 bwrb audit --output json
 
-# Fix issues (writes by default; requires explicit targeting)
+# JSON issue metadata (for hygiene checks, under `issue.meta`)
+# trailing-whitespace: line, before, after, trimmedCount
+# unknown-enum-casing: suggested, matchedBy, before, after
+# frontmatter-key-casing: fromKey, toKey, before, after (or conflictValue)
+# duplicate-list-values: duplicates, removedCount, before, after
+# invalid-boolean-coercion: coercedTo, before, after
+
+# Fix issues (interactive writes by default; explicit targeting required)
 # Apply guided fixes
 bwrb audit --path "Ideas/**" --fix
 # Preview fixes without writing
 bwrb audit --path "Ideas/**" --fix --dry-run
 # Auto-apply unambiguous fixes
-bwrb audit --path "Ideas/**" --fix --auto
+bwrb audit --path "Ideas/**" --fix --auto --execute
 # Preview auto-fixes
-bwrb audit --path "Ideas/**" --fix --auto --dry-run
+bwrb audit --path "Ideas/**" --fix --auto
 
 # Fix a specific issue code (auto-fix; safe to script)
+bwrb audit --path "Ideas/**" --only trailing-whitespace --fix --auto --execute
 bwrb audit --path "Ideas/**" --only trailing-whitespace --fix --auto
-bwrb audit --path "Ideas/**" --only trailing-whitespace --fix --auto --dry-run
 
-# Note: --execute is deprecated for audit fixes (kept for compatibility).
+# Non-interactive automation
+bwrb audit --output json
+bwrb audit --fix --auto --execute --all
+# Refuse interactive audit fixes without a TTY
+bwrb audit --fix --all
 ```
 
 #### Type Inference and Check Dependencies
