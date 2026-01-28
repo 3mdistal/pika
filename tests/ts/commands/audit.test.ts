@@ -313,6 +313,48 @@ customField: value
       expect(result.stdout).toContain('Unknown field: customField');
     });
 
+    it('should ignore built-in id and name fields', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Builtins.md'),
+        `---
+type: idea
+id: 123e4567-e89b-12d3-a456-426614174000
+name: Example
+status: raw
+priority: medium
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('Unknown field: id');
+      expect(result.stdout).not.toContain('Unknown field: name');
+    });
+
+    it('should keep strict mode errors for real unknown fields', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Builtins With Extra.md'),
+        `---
+type: idea
+id: 123e4567-e89b-12d3-a456-426614174000
+name: Example
+status: raw
+priority: medium
+customField: value
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--strict'], tempVaultDir);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain('Unknown field: customField');
+      expect(result.stdout).not.toContain('Unknown field: id');
+      expect(result.stdout).not.toContain('Unknown field: name');
+    });
+
     it('should allow Obsidian native fields like tags', async () => {
       await writeFile(
         join(tempVaultDir, 'Ideas', 'With Tags.md'),
@@ -556,6 +598,34 @@ priority: medium
       expect(issue.field).toBe('status');
       expect(issue.value).toBe('wip');
       expect(issue.expected).toContain('raw');
+    });
+
+    it('should exclude built-in fields from unknown-field issues', async () => {
+      await writeFile(
+        join(tempVaultDir, 'Ideas', 'Builtins.json.md'),
+        `---
+type: idea
+id: 123e4567-e89b-12d3-a456-426614174000
+name: Example
+status: raw
+priority: medium
+customField: value
+---
+`
+      );
+
+      const result = await runCLI(['audit', 'idea', '--output', 'json'], tempVaultDir);
+
+      expect(result.exitCode).toBe(0);
+      type AuditIssue = { code: string; field?: string };
+      const json = JSON.parse(result.stdout) as { files: Array<{ issues: AuditIssue[] }> };
+      const unknownIssues = json.files
+        .flatMap(file => file.issues)
+        .filter((issue): issue is AuditIssue => issue.code === 'unknown-field');
+      const unknownFields = unknownIssues.map(issue => issue.field);
+      expect(unknownFields).toContain('customField');
+      expect(unknownFields).not.toContain('id');
+      expect(unknownFields).not.toContain('name');
     });
   });
 

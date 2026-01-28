@@ -42,6 +42,7 @@ import {
   isMarkdownLink,
   extractWikilinkTarget,
 } from './types.js';
+import { BWRB_BUILTIN_FRONTMATTER_FIELDS } from '../frontmatter/systemFields.js';
 import { extractLinkTarget } from '../links.js';
 
 // Import file discovery functions from shared module
@@ -306,6 +307,7 @@ export async function auditFile(
   // Combine allowed fields from different sources
   const allowedFields = new Set([
     ...ALLOWED_NATIVE_FIELDS,
+    ...BWRB_BUILTIN_FRONTMATTER_FIELDS,
     ...(options.allowedFields ?? []),
     ...(schema.raw.audit?.allowed_extra_fields ?? []),
   ]);
