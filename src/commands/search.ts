@@ -11,7 +11,7 @@ import { readFile } from 'fs/promises';
 import { basename } from 'path';
 import { resolveVaultDir } from '../lib/vault.js';
 import { getGlobalOpts } from '../lib/command.js';
-import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
+import { loadSchema, getTypeDefByPath, getAllFieldsForType } from '../lib/schema.js';
 import { printError, printSuccess } from '../lib/prompt.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes, exitWithResolutionError, warnDeprecated, type SearchOutputFormat } from '../lib/output.js';
 import { openNote, resolveAppMode } from './open.js';
@@ -355,11 +355,15 @@ async function handleContentSearch(
 
   // Apply frontmatter filters if specified (--where expressions)
   if (options.where && options.where.length > 0) {
+    const knownKeys = options.type
+      ? getAllFieldsForType(schema, options.type)
+      : null;
     filteredResults = await filterByFrontmatter(
       searchResult.results,
       options.where,
       vaultDir,
-      jsonMode
+      jsonMode,
+      knownKeys
     );
   }
 
@@ -475,7 +479,8 @@ async function filterByFrontmatter(
   results: ContentMatch[],
   whereExpressions: string[],
   vaultDir: string,
-  jsonMode: boolean
+  jsonMode: boolean,
+  knownKeys?: Set<string> | null
 ): Promise<ContentMatch[]> {
   // Parse frontmatter for each result and prepare for filtering
   const resultsWithFrontmatter: Array<{
@@ -502,6 +507,7 @@ async function filterByFrontmatter(
     whereExpressions,
     vaultDir,
     silent: jsonMode,
+    ...(knownKeys ? { knownKeys } : {}),
   });
 
   // Return the original ContentMatch objects

@@ -81,6 +81,9 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Changed
 
+- **`--where` now supports hyphenated frontmatter keys** (#410)
+  - Example: `--where "creation-date == '2026-01-28'"`
+
 - **Consolidated CLI reference documentation** (#257)
   - Each top-level command (`config`, `schema`, `template`) now has a single comprehensive page
   - Subcommands are documented as sections with anchor links instead of separate pages
