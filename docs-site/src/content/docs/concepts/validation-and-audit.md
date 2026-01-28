@@ -33,9 +33,11 @@ Audit catches:
 - Type mismatches
 - Malformed frontmatter
 
+System-managed fields written by bwrb (`id`, `name`) are always allowed and never reported as `unknown-field`.
+
 ## Fixing Issues
 
-`bwrb audit --fix` applies fixes by default, but requires explicit targeting.
+`bwrb audit --fix` applies fixes by default, but requires explicit targeting (use `--all` to target the full vault).
 
 Preview fixes without writing:
 
@@ -47,6 +49,12 @@ Apply fixes:
 
 ```bash
 bwrb audit --path "Ideas/**" --fix
+```
+
+Apply fixes across the entire vault:
+
+```bash
+bwrb audit --all --fix
 ```
 
 ## CI Integration

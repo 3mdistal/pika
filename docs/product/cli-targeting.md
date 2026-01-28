@@ -12,6 +12,26 @@ Bowerbird uses a unified targeting model across all commands that operate on set
 
 **Core principle:** All targeting selectors compose via AND (intersection). Each selector narrows the set of matched files.
 
+### Vault resolution (Phase 2)
+
+When `--vault` is not provided and the CLI is not inside a vault, Bowerbird runs a bounded find-down to discover candidate vaults beneath the current directory.
+
+**Order of precedence:**
+- `--vault <path>` (explicit)
+- Find-up nearest ancestor containing `.bwrb/schema.json`
+- `BWRB_VAULT` environment variable
+- Find-down under `cwd` (Phase 2)
+
+**Find-down behavior:**
+- A vault root is any directory containing `.bwrb/schema.json`
+- Once a vault is found on a branch, traversal does not continue into that directory
+- Discovery is bounded and deterministic (sorted traversal, capped depth/results)
+
+**Selection rules:**
+- One candidate → auto-select
+- Multiple candidates → prompt in TTY; otherwise error and require `--vault`
+- `--output json` always errors with a structured candidate list
+
 ---
 
 ## The Four Core Selectors
@@ -67,6 +87,7 @@ bwrb audit --where "isEmpty(tags)"
 - Supports boolean operators: `&&`, `||`, `!`
 - Supports functions: `isEmpty()`, `contains()`, `startsWith()`, etc.
 - Multiple `--where` flags are ANDed together
+- Field names may include hyphens and are treated literally in `--where` (e.g., `creation-date == '2026-01-28'`).
 
 **Type-checking behavior:**
 - With `--type`: strict validation (error on unknown fields)
@@ -226,7 +247,7 @@ This two-gate model prevents accidental vault-wide mutations. You must be explic
 
 ### Exception: `audit --fix`
 
-`bwrb audit --fix` is a remediation workflow. It still requires explicit targeting (at least one selector or `--all`). Interactive fixes write by default; auto-fixes require `--execute` to apply.
+`bwrb audit --fix` is a remediation workflow. Report-mode audit defaults to implicit `--all`, but fixes require explicit targeting (at least one selector or `--all`). Interactive fixes write by default; auto-fixes require `--execute` to apply.
 
 - **Targeting required:** No selectors = error. Must specify at least one selector OR explicit `--all`.
 - **Interactive preview:** Use `--dry-run` to preview guided fixes without writing.
@@ -379,6 +400,43 @@ bwrb list --type task --output link      # [[Task 1]], [[Task 2]], ...
 bwrb list --type task --output tree      # Hierarchical display
 bwrb search "TODO" --output content      # Full file with matches
 ```
+
+---
+
+## Pagination / Interactive Output
+
+Pagination is currently implemented only for the numbered selection prompt (the in-terminal picker used when multiple results need a choice).
+
+**Where it applies:**
+- Picker mode `numbered` (and `auto` when it falls back to numbered).
+- Picker mode `fzf` uses fzf's own controls; this contract does not apply.
+- Picker mode `none` is non-interactive and errors on ambiguity.
+
+**Page size:** 10 items per page. Pagination appears when there are more than 10 options.
+
+**Keys:**
+- `-`: previous page
+- `+` / `=`: next page (`=` is supported because `+` is Shift-`=`)
+- `1-9`: select item 1-9 on the current page
+- `0`: select item 10 on the current page
+- `Up/Down` (or `j/k`): move selection
+- `Enter`: confirm selection
+- `Ctrl+C` / `Escape`: cancel the operation
+
+**JSON output:** `--output json` is never interactive and must not paginate or prompt.
+
+### Planned: result output pagination (not yet implemented)
+
+If/when Bowerbird adds interactive pagination for command output, it will:
+- Apply only when stdout is a TTY and the output format is human-readable.
+- Never apply to `--output json` (full output only).
+- Use a 10-item increment per page.
+- Define "append" per format:
+  - `text`, `paths`, `link`: append next 10 items (line-based output)
+  - `tree`: append next 10 top-level nodes with their full subtree
+  - `content`: append next 10 note bodies
+
+This section is a product contract for future work and is not implemented yet.
 
 ---
 

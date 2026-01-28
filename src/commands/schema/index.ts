@@ -5,10 +5,11 @@
 
 import { Command } from 'commander';
 import { loadSchema, getOutputDir } from '../../lib/schema.js';
-import { resolveVaultDir } from '../../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../../lib/vaultSelection.js';
 import { printJson, jsonSuccess, jsonError, ExitCodes } from '../../lib/output.js';
 import { printError } from '../../lib/prompt.js';
 import { getGlobalOpts } from '../../lib/command.js';
+import { UserCancelledError } from '../../lib/errors.js';
 
 // Subcommand modules
 import { listCommand } from './list.js';
@@ -48,7 +49,10 @@ schemaCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
 
       // Loading the schema validates it via Zod
       const schema = await loadSchema(vaultDir);
@@ -77,6 +81,14 @@ schemaCommand
         console.log('Schema is valid');
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(`Schema validation failed: ${message}`));
@@ -136,6 +148,14 @@ newCommand
       const args = [entityType];
       await newCommand.parseAsync(args, { from: 'user' });
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));
@@ -198,7 +218,9 @@ editCommand
 
       // Try to infer what the name refers to
       const globalOpts = getGlobalOpts(cmd);
-      const vaultDir = resolveVaultDir(globalOpts);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
       const match = inferSchemaEntity(schema, name);
 
@@ -251,6 +273,14 @@ editCommand
           );
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));
@@ -314,7 +344,9 @@ deleteCommand
 
       // Try to infer what the name refers to
       const globalOpts = getGlobalOpts(cmd);
-      const vaultDir = resolveVaultDir(globalOpts);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
       const match = inferSchemaEntity(schema, name);
 
@@ -370,6 +402,14 @@ deleteCommand
           );
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));

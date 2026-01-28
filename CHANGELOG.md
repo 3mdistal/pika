@@ -24,8 +24,21 @@ All notable changes to Bowerbird are documented in this file.
 - **Vault auto-detection now uses nearest `.bwrb/schema.json` (find-up)** (#337)
   - Precedence: `--vault` > find-up > `BWRB_VAULT` > `cwd` (error if not a vault)
 
+### Changed
+
+- **Audit ignores built-in frontmatter fields written by `bwrb new`** (#395)
+  - `id` and `name` no longer emit `unknown-field` warnings
+
+### Fixed
+
+- **Owned note creation now writes `owner` frontmatter and uses the owning field folder** (#394)
+
 ### Added
 
+- **Phase 2 vault auto-detection with downward discovery and picker** (#338)
+  - When not inside a vault and `--vault` is missing, bwrb now discovers vaults below `cwd`
+  - Auto-selects the only match, prompts in TTY when multiple matches
+  - Non-interactive or `--output json` now errors with candidate list
 - **Audit --fix Phase 5: Type coercion fixes** (#272)
   - `wrong-scalar-type`: safe string -> number/boolean coercion in `audit --fix --auto`
   - `invalid-date-format`: interactive prompts with ISO-ish suggestions for date fields
@@ -72,11 +85,25 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Changed
 
+- **`--where` now supports hyphenated frontmatter keys** (#410)
+  - Example: `--where "creation-date == '2026-01-28'"`
+
 - **Consolidated CLI reference documentation** (#257)
   - Each top-level command (`config`, `schema`, `template`) now has a single comprehensive page
   - Subcommands are documented as sections with anchor links instead of separate pages
   - Reduces navigation depth and makes it easier to see all related functionality at a glance
   - Matches common CLI documentation patterns (e.g., git man pages)
+
+- **Clarified audit --fix completion messaging** (#396)
+  - Confirms when fixes are applied and avoids deprecated `--execute` guidance
+  - Dry-run output now points to re-running without `--dry-run`
+
+### Fixed
+
+- **Audit --fix structural auto-fixes are more conservative and preserve line endings** (#374)
+  - Duplicate key conflicts are now queued for manual review in auto mode
+  - Singular/plural conflicts are no longer auto-fixed when both keys have values
+  - Frontmatter structural rewrites preserve existing CRLF/LF style
 
 ### Added
 
@@ -115,6 +142,10 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Fixed
 
+- **Clarify audit --fix targeting requirement in CLI help and error output** (#378)
+- **Report packaged version in `bwrb --version` output** (#379)
+- **Ensure npm publish artifacts include built CLI output** (#408)
+  - Add prepack build and pack verification to prevent missing `dist/index.js`
 - **Handle malformed frontmatter wikilink scalars without crashing audit fixes** (#354)
 - **Ignore slashes in note names when creating files** (#353)
 

@@ -10,18 +10,20 @@ import {
   loadSchema,
   getTypeDefByPath,
 } from '../lib/schema.js';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { printError, printWarning } from '../lib/prompt.js';
 import {
   printJson,
   jsonError,
   ExitCodes,
+  type ExitCode,
 } from '../lib/output.js';
 import {
   parsePositionalArg,
   hasAnyTargeting,
 } from '../lib/targeting.js';
+import { UserCancelledError } from '../lib/errors.js';
 
 // Import from audit modules
 import {
@@ -48,6 +50,18 @@ import {
   outputFixResults,
   showAvailableTypes,
 } from '../lib/audit/output.js';
+
+const FIX_TARGETING_ERROR_SUMMARY =
+  'No files selected. Use --type, --path, --where, --body, or --all.';
+const FIX_TARGETING_ERROR_MESSAGE = [
+  FIX_TARGETING_ERROR_SUMMARY,
+  'bwrb audit is read-only and defaults to all files.',
+  'bwrb audit --fix writes by default and requires explicit targeting (use selectors or --all).',
+  'Examples:',
+  '  bwrb audit --path "Ideas/**" --fix',
+  '  bwrb audit --all --fix',
+  '  bwrb audit --path "Ideas/**" --fix --dry-run --auto',
+].join('\n');
 
 // ============================================================================
 // Command Definition
@@ -85,6 +99,12 @@ Targeting Options:
   --path <glob>     Filter by file path pattern
   --where <expr>    Filter by frontmatter expression
   --body <query>    Filter by body content
+  --all             Target all files (explicit vault-wide selector)
+
+Safety:
+  bwrb audit (no selectors) defaults to all files because it is read-only.
+  bwrb audit --fix requires explicit targeting (selectors or --all) and writes by default.
+  Use --dry-run to preview fixes without writing.
 
 Examples:
   bwrb audit                      # Check all files (report only)
@@ -97,25 +117,26 @@ Examples:
   bwrb audit --ignore unknown-field
   bwrb audit --output json        # JSON output for CI
   bwrb audit --allow-field custom # Allow specific extra field
-  bwrb audit --fix --path "Ideas/**"             # Interactive guided fixes (writes)
-  bwrb audit --fix --dry-run --path "Ideas/**"   # Preview guided fixes (no writes)
-  bwrb audit --fix --auto --execute --path "Ideas/**"  # Auto-fix unambiguous issues (writes)
-  bwrb audit --fix --auto --path "Ideas/**"      # Preview auto-fixes (no writes)`) 
+  bwrb audit --all --fix                  # Interactive guided fixes across vault (writes)
+  bwrb audit --fix --path "Ideas/**"      # Interactive guided fixes (writes)
+  bwrb audit --fix --dry-run --path "Ideas/**"    # Preview guided fixes (no writes)
+  bwrb audit --fix --auto --path "Ideas/**"      # Auto-fix unambiguous issues (writes)
+  bwrb audit --fix --auto --dry-run --path "Ideas/**" # Preview auto-fixes (no writes)`)
   .argument('[target]', 'Type, path, or where expression (auto-detected)')
   .option('-t, --type <type>', 'Filter by type path (e.g., idea, objective/task)')
   .option('-p, --path <glob>', 'Filter by file path pattern')
   .option('-w, --where <expr...>', 'Filter by frontmatter expression')
   .option('-b, --body <query>', 'Filter by body content')
   .option('--text <query>', 'Filter by body content (deprecated: use --body)', undefined)
-  .option('-a, --all', 'Target all files (required for --fix without other targeting)')
+  .option('-a, --all', 'Target all files (explicit vault-wide selector)')
   .option('--strict', 'Treat unknown fields as errors instead of warnings')
   .option('--only <issue-type>', 'Only report specific issue type')
   .option('--ignore <issue-type>', 'Ignore specific issue type')
   .option('--output <format>', 'Output format: text (default) or json')
-  .option('--fix', 'Interactive repair mode')
+  .option('--fix', 'Interactive repair mode (writes by default; requires explicit targeting)')
   .option('--auto', 'With --fix: automatically apply unambiguous fixes')
   .option('--dry-run', 'With --fix: preview fixes without writing')
-  .option('--execute', 'With --fix --auto: apply fixes (required to write changes)')
+  .option('--execute', 'Deprecated (auto-fixes write by default; use --dry-run to preview)')
   .option('--allow-field <fields...>', 'Allow additional fields beyond schema (repeatable)')
   .action(async (target: string | undefined, options: AuditOptions & {
     type?: string;
@@ -128,42 +149,74 @@ Examples:
     const autoMode = options.auto ?? false;
     const dryRunMode = options.dryRun ?? false;
     const executeMode = options.execute ?? false;
+    const exitWithValidationError = (
+      message: string,
+      {
+        code = ExitCodes.VALIDATION_ERROR,
+        jsonMessage,
+        stderrMessage,
+      }: {
+        code?: ExitCode;
+        jsonMessage?: string;
+        stderrMessage?: string;
+      } = {}
+    ): never => {
+      if (jsonMode) {
+        printJson(jsonError(jsonMessage ?? message, { code }));
+        printError(stderrMessage ?? message);
+      } else {
+        printError(message);
+      }
+      process.exit(code);
+    };
 
     // --auto requires --fix
     if (autoMode && !fixMode) {
-      printError('--auto requires --fix');
-      process.exit(1);
+      exitWithValidationError('--auto requires --fix');
     }
 
     // --dry-run requires --fix
     if (dryRunMode && !fixMode) {
-      printError('--dry-run requires --fix');
-      process.exit(1);
+      exitWithValidationError('--dry-run requires --fix');
     }
 
     // --execute requires --fix
     if (executeMode && !fixMode) {
-      printError('--execute requires --fix');
-      process.exit(1);
+      exitWithValidationError('--execute requires --fix');
     }
 
     // --fix is not compatible with JSON output
     if (fixMode && jsonMode) {
-      printError('--fix is not compatible with --output json');
-      process.exit(1);
+      exitWithValidationError('--fix is not compatible with --output json');
     }
 
     if (executeMode && dryRunMode) {
-      printError('--execute cannot be used with --dry-run');
-      process.exit(1);
+      exitWithValidationError('--execute cannot be used with --dry-run');
     }
 
-    if (executeMode) {
-      printWarning('Warning: --execute will apply fixes; omit it to preview changes.');
+    if (fixMode && !target) {
+      const hasInitialTargeting = hasAnyTargeting({
+        ...(options.type && { type: options.type }),
+        ...(options.path && { path: options.path }),
+        ...(options.where && options.where.length > 0 && { where: options.where }),
+        ...(options.body && { body: options.body }),
+        ...(options.text && { text: options.text }),
+        ...(options.all && { all: options.all }),
+      });
+
+      if (!hasInitialTargeting) {
+        exitWithValidationError(FIX_TARGETING_ERROR_MESSAGE, {
+          jsonMessage: FIX_TARGETING_ERROR_SUMMARY,
+          stderrMessage: FIX_TARGETING_ERROR_MESSAGE,
+        });
+      }
     }
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Handle --text deprecation
@@ -185,12 +238,7 @@ Examples:
         if (whereExprs) existingOpts.where = whereExprs;
         const parsed = parsePositionalArg(target, schema, existingOpts as import('../lib/targeting.js').TargetingOptions);
         if (parsed.error) {
-          if (jsonMode) {
-            printJson(jsonError(parsed.error));
-            process.exit(ExitCodes.VALIDATION_ERROR);
-          }
-          printError(parsed.error);
-          process.exit(1);
+          exitWithValidationError(parsed.error);
         }
         
         // Apply parsed positional to appropriate option
@@ -216,11 +264,18 @@ Examples:
         });
 
         if (!hasTargetingForFix) {
-          printError('No files selected. Use --type, --path, --where, --body, or --all.');
-          process.exit(1);
+          exitWithValidationError(FIX_TARGETING_ERROR_MESSAGE, {
+            jsonMessage: FIX_TARGETING_ERROR_SUMMARY,
+            stderrMessage: FIX_TARGETING_ERROR_MESSAGE,
+          });
         }
       }
 
+      if (executeMode && autoMode) {
+        printWarning('Warning: --execute is deprecated; auto-fixes write by default. Use --dry-run to preview changes.');
+      } else if (executeMode) {
+        printWarning('Warning: --execute is deprecated and has no effect without --auto; interactive --fix writes by default.');
+      }
 
       // Validate type if specified
       if (typePath) {
@@ -228,12 +283,13 @@ Examples:
         if (!typeDef) {
           const error = `Unknown type: ${typePath}`;
           if (jsonMode) {
-            printJson(jsonError(error));
+            printJson(jsonError(error, { code: ExitCodes.VALIDATION_ERROR }));
+            printError(error);
             process.exit(ExitCodes.VALIDATION_ERROR);
           }
           printError(error);
           await showAvailableTypes(schema);
-          process.exit(1);
+          process.exit(ExitCodes.VALIDATION_ERROR);
         }
       }
 
@@ -259,12 +315,22 @@ Examples:
       // Handle fix mode
       if (fixMode) {
         if (!autoMode && !process.stdin.isTTY && results.length > 0) {
-          printError('audit --fix is interactive and requires a TTY; use --fix --auto or --output json');
-          process.exit(1);
+          exitWithValidationError('audit --fix is interactive and requires a TTY; use --fix --auto or --output json');
         }
 
+        const executeRequiredIssueCodes = new Set<IssueCode>(['trailing-whitespace']);
+        const hasExecuteRequiredIssues = autoMode && !executeMode && results.some(result =>
+          result.issues.some(issue => issue.autoFixable && executeRequiredIssueCodes.has(issue.code))
+        );
+        const autoFixDryRun = dryRunMode || hasExecuteRequiredIssues;
+        const autoFixDryRunReason = dryRunMode
+          ? 'explicit'
+          : hasExecuteRequiredIssues
+            ? 'execute-required'
+            : undefined;
+
         const fixSummary = autoMode
-          ? await runAutoFix(results, schema, vaultDir, { dryRun: dryRunMode || !executeMode })
+          ? await runAutoFix(results, schema, vaultDir, { dryRun: autoFixDryRun, dryRunReason: autoFixDryRunReason })
           : await runInteractiveFix(results, schema, vaultDir, { dryRun: dryRunMode });
 
         outputFixResults(fixSummary, autoMode);
@@ -290,9 +356,18 @@ Examples:
         process.exit(ExitCodes.VALIDATION_ERROR);
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
-        printJson(jsonError(message));
+        printJson(jsonError(message, { code: ExitCodes.VALIDATION_ERROR }));
+        printError(message);
         process.exit(ExitCodes.VALIDATION_ERROR);
       }
       printError(message);

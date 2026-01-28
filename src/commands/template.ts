@@ -18,7 +18,8 @@ import {
   getInheritedTemplates,
   type TemplateWithSource,
 } from '../lib/template.js';
-import { resolveVaultDir, queryByType, formatValue } from '../lib/vault.js';
+import { queryByType, formatValue } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { parseNote, writeNote } from '../lib/frontmatter.js';
 import {
@@ -132,7 +133,10 @@ templateCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       
       // Load schema to validate type path if provided
       const schema = await loadSchema(vaultDir);
@@ -369,7 +373,10 @@ templateCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Validate type path if provided
@@ -489,7 +496,10 @@ templateCommand
     const jsonMode = options.json !== undefined;
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Prompt for type if not provided
@@ -859,7 +869,10 @@ templateCommand
     const jsonMode = options.json !== undefined;
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       let template: Template | null = null;
@@ -1297,7 +1310,10 @@ templateCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       let template: Template | null = null;

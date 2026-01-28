@@ -14,11 +14,18 @@ import {
   getOutputDir,
   getTypeFamilies,
   getDescendants,
+  getAllFieldsForType,
 } from '../schema.js';
 import { readStructuralFrontmatter } from './structural.js';
+import {
+  splitLinesPreserveEol,
+  parseSimpleYamlKeyValueLine,
+  isBlockScalarHeader,
+} from './raw.js';
 import { isEmptyRequiredValue } from './emptiness.js';
 import { coerceBooleanFromString, coerceNumberFromString } from './coercion.js';
 import { suggestIsoDate } from './date-suggest.js';
+import { extractYamlNodeValue, isEffectivelyEmpty } from './value-utils.js';
 import { isMap } from 'yaml';
 import type { Pair, Scalar, YAMLMap } from 'yaml';
 import { isDeepStrictEqual } from 'node:util';
@@ -36,6 +43,7 @@ import {
   isMarkdownLink,
   extractWikilinkTarget,
 } from './types.js';
+import { isBwrbBuiltinFrontmatterField } from '../frontmatter/systemFields.js';
 import { extractLinkTarget } from '../links.js';
 
 // Import file discovery functions from shared module
@@ -99,10 +107,14 @@ export async function runAudit(
       })
     );
     
+    const knownKeys = options.typePath
+      ? getAllFieldsForType(schema, options.typePath)
+      : null;
     const filtered = await applyFrontmatterFilters(filesWithFrontmatter, {
       whereExpressions: options.whereExpressions,
       vaultDir,
       silent: true,
+      ...(knownKeys ? { knownKeys } : {}),
     });
     
     // Map back to ManagedFile
@@ -288,7 +300,7 @@ export async function auditFile(
         expected: expectedOutputDir,
         currentDirectory: actualDir,
         expectedDirectory: expectedOutputDir,
-        autoFixable: true, // Can be auto-fixed with --execute
+        autoFixable: true, // Can be auto-fixed with --fix
       });
     }
   }
@@ -391,19 +403,39 @@ export async function auditFile(
     // Check select field options
     if (field.options && field.options.length > 0) {
       const validOptions = field.options;
-      const strValue = String(value);
-      if (!validOptions.includes(strValue)) {
-        const suggestion = suggestOptionValue(strValue, validOptions);
-        issues.push({
-          severity: 'error',
-          code: 'invalid-option',
-          message: `Invalid ${fieldName} value: '${value}'`,
-          field: fieldName,
-          value,
-          expected: validOptions,
-          ...(suggestion && { suggestion: `Did you mean '${suggestion}'?` }),
-          autoFixable: false,
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => {
+          if (typeof item !== 'string') return;
+          if (!validOptions.includes(item)) {
+            const suggestion = suggestOptionValue(item, validOptions);
+            issues.push({
+              severity: 'error',
+              code: 'invalid-option',
+              message: `Invalid ${fieldName} value: '${item}'`,
+              field: fieldName,
+              value: item,
+              expected: validOptions,
+              listIndex: index,
+              ...(suggestion && { suggestion: `Did you mean '${suggestion}'?` }),
+              autoFixable: false,
+            });
+          }
         });
+      } else {
+        const strValue = String(value);
+        if (!validOptions.includes(strValue)) {
+          const suggestion = suggestOptionValue(strValue, validOptions);
+          issues.push({
+            severity: 'error',
+            code: 'invalid-option',
+            message: `Invalid ${fieldName} value: '${value}'`,
+            field: fieldName,
+            value,
+            expected: validOptions,
+            ...(suggestion && { suggestion: `Did you mean '${suggestion}'?` }),
+            autoFixable: false,
+          });
+        }
       }
     }
 
@@ -446,7 +478,7 @@ export async function auditFile(
     if (fieldName === 'type' || fieldName.endsWith('-type')) continue;
     
     // Skip allowed native fields and user-allowed fields
-    if (allowedFields.has(fieldName)) continue;
+    if (allowedFields.has(fieldName) || isBwrbBuiltinFrontmatterField(fieldName)) continue;
 
     if (!fieldNames.has(fieldName)) {
       const suggestion = suggestFieldName(fieldName, Array.from(fieldNames));
@@ -497,16 +529,6 @@ export async function auditFile(
   issues.push(...hygieneIssues);
 
   return issues;
-}
-
-function isEffectivelyEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string' && value.trim().length === 0) return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.keys(value as Record<string, unknown>).length === 0;
-  }
-  return false;
 }
 
 type ResolvedRelationTarget = {
@@ -563,7 +585,18 @@ function filterCandidatesBySource(
 }
 
 function toArrayValue(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [value];
+  const values: unknown[] = [];
+  const visit = (item: unknown) => {
+    if (Array.isArray(item)) {
+      for (const entry of item) {
+        visit(entry);
+      }
+      return;
+    }
+    values.push(item);
+  };
+  visit(value);
+  return values;
 }
 
 function normalizeWikilinkFlowSequence(value: unknown): string | null {
@@ -609,7 +642,7 @@ function checkRelationFieldIssues(
     const rawString = typeof rawValue === 'string' ? rawValue : normalizeWikilinkFlowSequence(rawValue);
     if (!rawString) continue;
 
-    const rawTarget = extractLinkTarget(rawString);
+    const rawTarget = extractLinkTarget(rawString) ?? rawString.trim();
     if (!rawTarget) continue;
 
     const resolvedTarget = resolveRelationTarget(noteTargetIndex, rawTarget);
@@ -727,7 +760,6 @@ function checkListElementIntegrity(
 
   return issues;
 }
-
 function repairNearWikilink(trimmed: string): string | null {
   if (trimmed.startsWith('[[') && trimmed.endsWith(']') && !trimmed.endsWith(']]')) {
     return `${trimmed}]`;
@@ -749,7 +781,7 @@ function collectStructuralIssues(
   // frontmatter-not-at-top
   if (structural.primaryBlock && !structural.atTop) {
     const autoFixable =
-      structural.blocks.length === 1 &&
+      structural.frontmatterBlocks.length === 1 &&
       !structural.unterminated &&
       structural.yamlErrors.length === 0;
 
@@ -777,25 +809,7 @@ function collectStructuralIssues(
     for (const [key, pairs] of groups.entries()) {
       if (!key || pairs.length < 2) continue;
 
-      const values = pairs.map((p) => {
-        const valueNode = (p as { value?: unknown }).value;
-        if (valueNode && typeof valueNode === 'object') {
-          const record = valueNode as Record<string, unknown>;
-          const toJson = record['toJSON'];
-          if (typeof toJson === 'function') {
-            try {
-              return (toJson as () => unknown)();
-            } catch {
-              // Fall through
-            }
-          }
-
-          if ('value' in record) {
-            return record['value'];
-          }
-        }
-        return null;
-      });
+      const values = pairs.map((p) => extractYamlNodeValue((p as { value?: unknown }).value));
       const nonEmptyValues = values.filter((v: unknown) => !isEffectivelyEmpty(v));
 
       let autoFixable = false;
@@ -1121,7 +1135,7 @@ async function checkOwnershipViolations(
         expected: expectedDir,
         currentDirectory: actualDir,
         expectedDirectory: expectedDir,
-        autoFixable: true, // Can be auto-fixed with --execute
+        autoFixable: true, // Can be auto-fixed with --fix
         ownerPath: ownedInfo.ownerPath,
         ownedNotePath: file.relativePath,
       });
@@ -1277,68 +1291,6 @@ function checkParentCycle(
 // Phase 2: Hygiene Issue Detection
 // ============================================================================
 
-type RawLine = {
-  text: string;
-  eol: string;
-  lineNumber: number;
-  startOffset: number;
-  endOffset: number;
-};
-
-function splitLinesPreserveEol(input: string): RawLine[] {
-  const lines: RawLine[] = [];
-  let start = 0;
-  let lineNumber = 1;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-    if (ch !== '\n' && ch !== '\r') continue;
-
-    const eolStart = i;
-    let eol = ch;
-    if (ch === '\r' && input[i + 1] === '\n') {
-      eol = '\r\n';
-      i++;
-    }
-
-    lines.push({
-      text: input.slice(start, eolStart),
-      eol,
-      lineNumber,
-      startOffset: start,
-      endOffset: eolStart,
-    });
-
-    start = i + 1;
-    lineNumber++;
-  }
-
-  lines.push({
-    text: input.slice(start),
-    eol: '',
-    lineNumber,
-    startOffset: start,
-    endOffset: input.length,
-  });
-
-  return lines;
-}
-
-function parseSimpleYamlKeyValueLine(line: string): { indent: number; key: string; rest: string } | null {
-  const match = line.match(/^([ \t]*)([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
-  if (!match) return null;
-
-  return {
-    indent: match[1]!.length,
-    key: match[2]!,
-    rest: match[3]!,
-  };
-}
-
-function isBlockScalarHeader(restTrimStart: string): boolean {
-  // Handles: |, >, |-, |+, |2, |2-, >-, etc (optionally followed by a comment).
-  return /^[>|](?:[1-9])?(?:[+-])?\s*(#.*)?$/.test(restTrimStart);
-}
 
 function detectTrailingWhitespaceInRawFrontmatter(
   structural: Awaited<ReturnType<typeof readStructuralFrontmatter>>
@@ -1393,6 +1345,8 @@ function detectTrailingWhitespaceInRawFrontmatter(
 
     // Detect trailing spaces/tabs at end-of-line.
     if (/[ \t]+$/.test(text)) {
+      const trimmed = text.replace(/[ \t]+$/, '');
+      const trimmedCount = text.length - trimmed.length;
       issues.push({
         severity: 'warning',
         code: 'trailing-whitespace',
@@ -1401,6 +1355,12 @@ function detectTrailingWhitespaceInRawFrontmatter(
         value: restTrimStart,
         autoFixable: true,
         lineNumber: line.lineNumber,
+        meta: {
+          line: line.lineNumber,
+          before: text,
+          after: trimmed,
+          trimmedCount,
+        },
       });
     }
   }
@@ -1415,7 +1375,7 @@ function detectTrailingWhitespaceInRawFrontmatter(
  * - trailing-whitespace: String values with trailing whitespace
  * - frontmatter-key-casing: Keys that don't match schema casing
  * - unknown-enum-casing: Select field values with wrong case
- * - duplicate-list-values: Arrays with duplicate values (case-insensitive)
+ * - duplicate-list-values: Arrays with duplicate values (case-sensitive)
  * - invalid-boolean-coercion: "true"/"false" strings for boolean fields
  * - singular-plural-mismatch: Keys like 'tag' when schema has 'tags'
  */
@@ -1427,9 +1387,15 @@ function checkHygieneIssues(
   const issues: AuditIssue[] = [];
   
   // Build case-insensitive map of schema field names for key casing checks
-  const schemaKeyMap = new Map<string, string>();
+  const schemaKeyMap = new Map<string, string[]>();
   for (const key of schemaFieldNames) {
-    schemaKeyMap.set(key.toLowerCase(), key);
+    const lower = key.toLowerCase();
+    const existing = schemaKeyMap.get(lower);
+    if (existing) {
+      existing.push(key);
+    } else {
+      schemaKeyMap.set(lower, [key]);
+    }
   }
   
   for (const [fieldName, value] of Object.entries(frontmatter)) {
@@ -1457,7 +1423,7 @@ function checkHygieneIssues(
       }
     }
     
-    // Check for duplicate list values (case-insensitive)
+    // Check for duplicate list values (case-sensitive)
     if (Array.isArray(value)) {
       const dupIssue = checkDuplicateListValues(fieldName, value);
       if (dupIssue) {
@@ -1516,14 +1482,21 @@ function checkInvalidBooleanCoercion(
 
   const lower = value.trim().toLowerCase();
   if (lower === 'true' || lower === 'false') {
+    const coercedTo = lower === 'true';
     return {
       severity: 'warning',
       code: 'invalid-boolean-coercion',
       message: `String '${value}' should be boolean in '${fieldName}'`,
       field: fieldName,
       value: value,
-      expected: lower === 'true' ? 'true (boolean)' : 'false (boolean)',
+      expected: coercedTo ? 'true (boolean)' : 'false (boolean)',
       autoFixable: true,
+      meta: {
+        value,
+        coercedTo,
+        before: value,
+        after: coercedTo,
+      },
     };
   }
   
@@ -1539,16 +1512,18 @@ function checkUnknownEnumCasing(
   value: unknown,
   options: string[]
 ): AuditIssue | null {
-  const strValue = String(value);
-  
+  if (typeof value !== 'string') return null;
+  const strValue = value;
+
   // If exact match exists, no issue
   if (options.includes(strValue)) return null;
-  
+
   // Check for case-insensitive match
   const lowerValue = strValue.toLowerCase();
-  const matchingOption = options.find(opt => opt.toLowerCase() === lowerValue);
-  
-  if (matchingOption) {
+  const matchingOptions = options.filter(opt => opt.toLowerCase() === lowerValue);
+
+  if (matchingOptions.length === 1) {
+    const matchingOption = matchingOptions[0]!;
     return {
       severity: 'warning',
       code: 'unknown-enum-casing',
@@ -1558,6 +1533,28 @@ function checkUnknownEnumCasing(
       expected: matchingOption,
       canonicalValue: matchingOption,
       autoFixable: true,
+      meta: {
+        value: strValue,
+        suggested: matchingOption,
+        matchedBy: 'case-insensitive',
+        before: strValue,
+        after: matchingOption,
+      },
+    };
+  }
+
+  if (matchingOptions.length > 1) {
+    return {
+      severity: 'warning',
+      code: 'unknown-enum-casing',
+      message: `Ambiguous case for '${fieldName}': '${strValue}' matches multiple options`,
+      field: fieldName,
+      value: strValue,
+      autoFixable: false,
+      meta: {
+        value: strValue,
+        candidates: matchingOptions,
+      },
     };
   }
   
@@ -1565,25 +1562,27 @@ function checkUnknownEnumCasing(
 }
 
 /**
- * Check for duplicate values in arrays (case-insensitive).
+ * Check for duplicate values in arrays (case-sensitive).
  */
 function checkDuplicateListValues(
   fieldName: string,
   value: unknown[]
 ): AuditIssue | null {
-  // Convert all values to lowercase strings for comparison
+  if (!value.every(item => typeof item === 'string')) return null;
+
   const seen = new Set<string>();
   const duplicates: string[] = [];
-  
-  for (const item of value) {
-    const strItem = String(item).toLowerCase();
-    if (seen.has(strItem)) {
-      duplicates.push(String(item));
+  const deduped: string[] = [];
+
+  for (const item of value as string[]) {
+    if (seen.has(item)) {
+      duplicates.push(item);
     } else {
-      seen.add(strItem);
+      seen.add(item);
+      deduped.push(item);
     }
   }
-  
+
   if (duplicates.length > 0) {
     return {
       severity: 'warning',
@@ -1592,6 +1591,12 @@ function checkDuplicateListValues(
       field: fieldName,
       value: value,
       autoFixable: true,
+      meta: {
+        duplicates,
+        removedCount: duplicates.length,
+        before: value,
+        after: deduped,
+      },
     };
   }
   
@@ -1606,18 +1611,46 @@ function checkFrontmatterKeyCasing(
   fieldName: string,
   value: unknown,
   frontmatter: Record<string, unknown>,
-  schemaKeyMap: Map<string, string>
+  schemaKeyMap: Map<string, string[]>
 ): AuditIssue | null {
+  if (schemaKeyMap.has(fieldName.toLowerCase()) && schemaKeyMap.get(fieldName.toLowerCase())?.includes(fieldName)) {
+    return null;
+  }
+
   const lowerFieldName = fieldName.toLowerCase();
-  const canonicalKey = schemaKeyMap.get(lowerFieldName);
-  
+  const candidates = schemaKeyMap.get(lowerFieldName);
+
+  if (!candidates || candidates.length === 0) {
+    return null;
+  }
+
+  if (candidates.length > 1) {
+    return {
+      severity: 'warning',
+      code: 'frontmatter-key-casing',
+      message: `Key '${fieldName}' matches multiple schema keys`,
+      field: fieldName,
+      value: value,
+      autoFixable: false,
+      meta: {
+        fromKey: fieldName,
+        candidates: [...candidates],
+      },
+    };
+  }
+
+  const canonicalKey = candidates[0]!;
+
   // Only flag if:
   // 1. Current key doesn't match schema exactly
   // 2. But a case-insensitive match exists
   if (canonicalKey && canonicalKey !== fieldName) {
     // Check if canonical key already exists in frontmatter
-    const hasConflict = canonicalKey in frontmatter;
-    
+    const existingValue = frontmatter[canonicalKey];
+    const hasConflict =
+      canonicalKey in frontmatter &&
+      !isEffectivelyEmpty(existingValue) &&
+      !isEffectivelyEmpty(value);
     return {
       severity: 'warning',
       code: 'frontmatter-key-casing',
@@ -1627,9 +1660,16 @@ function checkFrontmatterKeyCasing(
       field: fieldName,
       value: value,
       canonicalKey: canonicalKey,
-      autoFixable: !hasConflict || isEmpty(frontmatter[canonicalKey]),
+      autoFixable: !hasConflict,
       hasConflict: hasConflict,
-      ...(hasConflict && { conflictValue: frontmatter[canonicalKey] }),
+      ...(hasConflict && { conflictValue: existingValue }),
+      meta: {
+        fromKey: fieldName,
+        toKey: canonicalKey,
+        ...(hasConflict
+          ? { conflictValue: existingValue }
+          : { before: fieldName, after: canonicalKey }),
+      },
     };
   }
   
@@ -1652,7 +1692,11 @@ function checkSingularPluralMismatch(
   // Check singular → plural (add 's')
   const pluralForm = fieldName + 's';
   if (schemaFieldNames.has(pluralForm)) {
-    const hasConflict = pluralForm in frontmatter;
+    const existingValue = frontmatter[pluralForm];
+    const hasConflict =
+      pluralForm in frontmatter &&
+      !isEffectivelyEmpty(existingValue) &&
+      !isEffectivelyEmpty(value);
     return {
       severity: 'warning',
       code: 'singular-plural-mismatch',
@@ -1662,9 +1706,9 @@ function checkSingularPluralMismatch(
       field: fieldName,
       value: value,
       canonicalKey: pluralForm,
-      autoFixable: !hasConflict || isEmpty(frontmatter[pluralForm]),
+      autoFixable: !hasConflict,
       hasConflict: hasConflict,
-      ...(hasConflict && { conflictValue: frontmatter[pluralForm] }),
+      ...(hasConflict && { conflictValue: existingValue }),
     };
   }
   
@@ -1672,7 +1716,11 @@ function checkSingularPluralMismatch(
   if (fieldName.endsWith('s') && fieldName.length > 1) {
     const singularForm = fieldName.slice(0, -1);
     if (schemaFieldNames.has(singularForm)) {
-      const hasConflict = singularForm in frontmatter;
+      const existingValue = frontmatter[singularForm];
+      const hasConflict =
+        singularForm in frontmatter &&
+        !isEffectivelyEmpty(existingValue) &&
+        !isEffectivelyEmpty(value);
       return {
         severity: 'warning',
         code: 'singular-plural-mismatch',
@@ -1682,24 +1730,14 @@ function checkSingularPluralMismatch(
         field: fieldName,
         value: value,
         canonicalKey: singularForm,
-        autoFixable: !hasConflict || isEmpty(frontmatter[singularForm]),
+        autoFixable: !hasConflict,
         hasConflict: hasConflict,
-        ...(hasConflict && { conflictValue: frontmatter[singularForm] }),
+        ...(hasConflict && { conflictValue: existingValue }),
       };
     }
   }
   
   return null;
-}
-
-/**
- * Check if a value is empty (null, undefined, empty string, or empty array).
- */
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (value === '') return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  return false;
 }
 
 // ============================================================================

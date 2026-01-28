@@ -62,6 +62,8 @@ export interface AuditIssue {
   expected?: string[] | string | undefined;
   suggestion?: string | undefined;
   autoFixable: boolean;
+  /** Per-issue metadata for JSON output (flattened in audit JSON). */
+  meta?: Record<string, unknown>;
   /** For orphan-file issues: the expected type path inferred from directory location */
   inferredType?: string | undefined;
   /** For format-violation: the expected format */
@@ -153,6 +155,8 @@ export interface FixResult {
 export interface FixSummary {
   /** When true, fixes are previewed (no writes). */
   dryRun: boolean;
+  /** Why the run was treated as dry-run. */
+  dryRunReason?: 'explicit' | 'execute-required';
   fixed: number;
   skipped: number;
   failed: number;
@@ -179,7 +183,7 @@ export interface AuditOptions {
   auto?: boolean;
   /** Preview fixes without writing. */
   dryRun?: boolean;
-  /** Apply fixes; required for audit --fix to write changes. */
+  /** Apply auto-fixes; deprecated in favor of --dry-run. */
   execute?: boolean;
   all?: boolean;
   allowField?: string[];

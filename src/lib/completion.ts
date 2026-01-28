@@ -255,6 +255,12 @@ const COMMANDS = [
   'config',
 ];
 
+async function resolveVaultDirForCompletion(options: { vault?: string }): Promise<string> {
+  const vaultOptions: { vault?: string; allowFindDown: boolean } = { allowFindDown: false };
+  if (options.vault) vaultOptions.vault = options.vault;
+  return await resolveVaultDir(vaultOptions);
+}
+
 /**
  * Options available for each command.
  * Only includes options that make sense to complete.
@@ -376,7 +382,7 @@ export async function handleCompletionRequest(
   // If previous word is --type or -t, complete with type names
   if (isTypeOption(ctx.previous)) {
     try {
-      const vaultDir = resolveVaultDir(options);
+      const vaultDir = await resolveVaultDirForCompletion(options);
       const schema = await loadSchema(vaultDir);
       return filterByPrefix(getTypeCompletions(schema), ctx.current);
     } catch {
@@ -388,7 +394,7 @@ export async function handleCompletionRequest(
   // If previous word is --path or -p, complete with paths
   if (isPathOption(ctx.previous)) {
     try {
-      const vaultDir = resolveVaultDir(options);
+      const vaultDir = await resolveVaultDirForCompletion(options);
       return await getPathCompletions(vaultDir, ctx.current);
     } catch {
       return [];
@@ -410,7 +416,7 @@ export async function handleCompletionRequest(
       // First positional could be a subcommand or a dashboard name
       if (ctx.positionalIndex === 0) {
         try {
-          const vaultDir = resolveVaultDir(options);
+          const vaultDir = await resolveVaultDirForCompletion(options);
           const subcommands = SUBCOMMANDS['dashboard'] ?? [];
           const dashboardNames = await getDashboardCompletions(vaultDir);
           // Combine subcommands and dashboard names (subcommands first)
@@ -426,7 +432,7 @@ export async function handleCompletionRequest(
     if (ctx.subcommand === 'edit' || ctx.subcommand === 'delete') {
       if (ctx.positionalIndex === 0) {
         try {
-          const vaultDir = resolveVaultDir(options);
+          const vaultDir = await resolveVaultDirForCompletion(options);
           return filterByPrefix(await getDashboardCompletions(vaultDir), ctx.current);
         } catch {
           return [];
@@ -447,7 +453,7 @@ export async function handleCompletionRequest(
     // For subcommands that take [type] [name]: show, edit, delete
     if (['show', 'edit', 'delete'].includes(ctx.subcommand)) {
       try {
-        const vaultDir = resolveVaultDir(options);
+        const vaultDir = await resolveVaultDirForCompletion(options);
         const schema = await loadSchema(vaultDir);
         
         // First positional: type name
@@ -472,7 +478,7 @@ export async function handleCompletionRequest(
     if (['list', 'validate', 'new'].includes(ctx.subcommand)) {
       if (ctx.positionalIndex === 0) {
         try {
-          const vaultDir = resolveVaultDir(options);
+          const vaultDir = await resolveVaultDirForCompletion(options);
           const schema = await loadSchema(vaultDir);
           return filterByPrefix(getTypeCompletions(schema), ctx.current);
         } catch {
@@ -501,7 +507,7 @@ export async function handleCompletionRequest(
         const whatArg = findPreviousPositionalArg(ctx, 0);
         if (whatArg === 'type') {
           try {
-            const vaultDir = resolveVaultDir(options);
+            const vaultDir = await resolveVaultDirForCompletion(options);
             const schema = await loadSchema(vaultDir);
             return filterByPrefix(getTypeCompletions(schema), ctx.current);
           } catch {

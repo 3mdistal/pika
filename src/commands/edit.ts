@@ -8,7 +8,7 @@
 import { Command } from 'commander';
 import { basename, isAbsolute, relative } from 'path';
 import fs from 'fs/promises';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
 import { printError, printSuccess } from '../lib/prompt.js';
@@ -18,6 +18,7 @@ import { parsePickerMode, resolveAndPick, type PickerMode } from '../lib/picker.
 import { editNoteFromJson, editNoteInteractive } from '../lib/edit.js';
 import { openNote, resolveAppMode } from './open.js';
 import { resolveTargets, hasAnyTargeting, type TargetingOptions } from '../lib/targeting.js';
+import { UserCancelledError } from '../lib/errors.js';
 
 // ============================================================================
 // Types
@@ -77,7 +78,10 @@ Examples:
     const jsonMode = options.json !== undefined;
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Validate type if provided
@@ -218,6 +222,14 @@ Examples:
         }
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));

@@ -35,6 +35,7 @@ import {
 } from '../bulk/move.js';
 import { formatValue } from '../vault.js';
 import { buildNoteTargetIndex, type NoteTargetIndex } from '../discovery.js';
+import { isBwrbBuiltinFrontmatterField } from '../frontmatter/systemFields.js';
 
 // Alias for backward compatibility
 const resolveTypePathFromFrontmatter = resolveTypeFromFrontmatter;
@@ -56,36 +57,22 @@ import {
   getLastPairForKey,
   getStringSequenceItem,
 } from './structural.js';
+import {
+  splitLinesPreserveEol,
+  parseSimpleYamlKeyValueLine,
+  isBlockScalarHeader,
+} from './raw.js';
+import { extractYamlNodeValue, isEffectivelyEmpty } from './value-utils.js';
+import {
+  getAutoUnknownFieldMigrationTarget,
+  getSimilarFieldCandidates,
+  getExpectedFieldShape,
+  getValueShape,
+} from './unknown-field.js';
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-/**
- * Check if a value is empty (null, undefined, empty string, or empty array).
- */
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true;
-  if (typeof value === 'string' && value.trim().length === 0) return true;
-  if (Array.isArray(value) && value.length === 0) return true;
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return Object.keys(value as Record<string, unknown>).length === 0;
-  }
-  return false;
-}
-
-type ValueShape = 'empty' | 'string' | 'number' | 'boolean' | 'array' | 'object' | 'unknown';
-
-function getValueShape(value: unknown): ValueShape {
-  if (value === null || value === undefined) return 'empty';
-  if (Array.isArray(value)) return 'array';
-  const type = typeof value;
-  if (type === 'string') return 'string';
-  if (type === 'number') return 'number';
-  if (type === 'boolean') return 'boolean';
-  if (type === 'object') return 'object';
-  return 'unknown';
-}
 
 function maybeUnquoteFormattedLink(value: string): string {
   const trimmed = value.trim();
@@ -101,178 +88,32 @@ function maybeUnquoteFormattedLink(value: string): string {
   return value;
 }
 
-function getExpectedFieldShape(field: Field | undefined): ValueShape {
-  if (!field || !field.prompt) return 'unknown';
-
-  switch (field.prompt) {
-    case 'list':
-      return 'array';
-    case 'boolean':
-      return 'boolean';
-    case 'number':
-      return 'number';
-    default:
-      // text/select/relation/date all ultimately serialize as strings in frontmatter
-      return 'string';
-  }
-}
-
-function isFieldShapeCompatible(value: unknown, field: Field | undefined): boolean {
-  const actual = getValueShape(value);
-  if (actual === 'empty') return true;
-
-  const expected = getExpectedFieldShape(field);
-  if (expected === 'unknown') return true;
-
-  return actual === expected;
-}
-
-function normalizeKeyTokens(key: string): string[] {
-  return key
-    .toLowerCase()
-    .split(/[\s\-_]+/)
-    .map(t => t.trim())
-    .filter(Boolean);
-}
-
-function normalizeKeyForComparison(key: string): string {
-  return normalizeKeyTokens(key).join('');
-}
-
-function isSingularPluralVariantNormalized(a: string, b: string): boolean {
-  if (!a || !b || a === b) return false;
-  return a === b + 's' || b === a + 's';
-}
-
-type SimilarFieldCandidate = {
-  field: string;
-  distance: number;
-  typeMismatch: boolean;
-  priority: number;
-};
-
-function getSimilarFieldCandidates(
-  unknownField: string,
-  schemaFields: Record<string, Field>,
-  unknownValue: unknown,
-  maxResults = 3
-): SimilarFieldCandidate[] {
-  const unknownNorm = normalizeKeyForComparison(unknownField);
-  if (!unknownNorm) return [];
-
-  const candidates: SimilarFieldCandidate[] = [];
-
-  for (const fieldName of Object.keys(schemaFields)) {
-    if (fieldName === 'type' || fieldName.endsWith('-type')) continue;
-
-    const candidateNorm = normalizeKeyForComparison(fieldName);
-    if (!candidateNorm) continue;
-
-    const dist = levenshteinDistance(unknownNorm, candidateNorm);
-    const minLen = Math.min(unknownNorm.length, candidateNorm.length);
-    const maxAllowedDist = Math.max(1, Math.floor(minLen * 0.2));
-
-    if (dist > maxAllowedDist) continue;
-
-    const priority = isSingularPluralVariantNormalized(unknownNorm, candidateNorm) ? 0 : 1;
-    const field = schemaFields[fieldName];
-    const typeMismatch = !isFieldShapeCompatible(unknownValue, field);
-
-    candidates.push({ field: fieldName, distance: dist, typeMismatch, priority });
-  }
-
-  candidates.sort((a, b) => {
-    if (a.priority !== b.priority) return a.priority - b.priority;
-    if (a.distance !== b.distance) return a.distance - b.distance;
-    return a.field.localeCompare(b.field, 'en');
-  });
-
-  return candidates.slice(0, maxResults);
-}
-
-function getAutoUnknownFieldMigrationTarget(
-  schema: LoadedSchema,
-  frontmatter: Record<string, unknown>,
-  unknownField: string,
-  unknownValue: unknown
-): string | null {
-  const typePath = resolveTypePathFromFrontmatter(schema, frontmatter);
-  if (!typePath) return null;
-
-  const schemaFields = getFieldsForType(schema, typePath);
-  const unknownNorm = normalizeKeyForComparison(unknownField);
-  if (!unknownNorm) return null;
-
-  const normalizedExactMatches = Object.keys(schemaFields).filter(
-    fieldName => normalizeKeyForComparison(fieldName) === unknownNorm
-  );
-
-  let targetField: string | undefined;
-
-  if (normalizedExactMatches.length === 1) {
-    targetField = normalizedExactMatches[0];
-  } else {
-    const singularPluralMatches = Object.keys(schemaFields).filter(fieldName =>
-      isSingularPluralVariantNormalized(unknownNorm, normalizeKeyForComparison(fieldName))
-    );
-
-    if (singularPluralMatches.length === 1) {
-      targetField = singularPluralMatches[0];
-    }
-  }
-
-  if (!targetField) return null;
-
-  const existing = frontmatter[targetField];
-  if (!isEmpty(existing)) return null;
-
-  const field = schemaFields[targetField];
-  if (!isFieldShapeCompatible(unknownValue, field)) return null;
-
-  return targetField;
-}
-
 const dryRunStorage = new AsyncLocalStorage<boolean>();
 
 function isDryRunEnabled(): boolean {
   return dryRunStorage.getStore() ?? false;
 }
 
-type RawLine = {
-  text: string;
-  eol: string;
-};
-
-function splitLinesPreserveEol(input: string): RawLine[] {
-  const lines: RawLine[] = [];
-  let start = 0;
-
-  for (let i = 0; i < input.length; i++) {
-    const ch = input[i];
-    if (ch !== '\n' && ch !== '\r') continue;
-
-    const eolStart = i;
-    let eol = ch;
-    if (ch === '\r' && input[i + 1] === '\n') {
-      eol = '\r\n';
-      i++;
-    }
-
-    lines.push({
-      text: input.slice(start, eolStart),
-      eol,
-    });
-
-    start = i + 1;
+function registerManualReview(
+  list: { file: string; issue: AuditIssue }[],
+  file: string,
+  issue: AuditIssue
+): void {
+  if (
+    list.some(
+      (entry) =>
+        entry.file === file &&
+        entry.issue.code === issue.code &&
+        entry.issue.field === issue.field &&
+        entry.issue.message === issue.message
+    )
+  ) {
+    return;
   }
 
-  lines.push({
-    text: input.slice(start),
-    eol: '',
-  });
-
-  return lines;
+  list.push({ file, issue });
 }
+
 
 async function applyTrailingWhitespaceFix(filePath: string, issue: AuditIssue): Promise<FixResult> {
   const lineNumber = issue.lineNumber;
@@ -307,6 +148,138 @@ async function applyTrailingWhitespaceFix(filePath: string, issue: AuditIssue): 
   return { file: filePath, issue, action: 'fixed' };
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getTopLevelIndent(
+  lines: Array<ReturnType<typeof splitLinesPreserveEol>[number]>,
+  yamlStart: number,
+  yamlEnd: number
+): number | null {
+  let inBlockScalar = false;
+  let blockScalarIndent = 0;
+  let minIndent: number | null = null;
+
+  for (const line of lines) {
+    if (line.startOffset < yamlStart || line.startOffset >= yamlEnd) continue;
+
+    const parsed = parseSimpleYamlKeyValueLine(line.text);
+
+    if (inBlockScalar) {
+      if (parsed && parsed.indent <= blockScalarIndent) {
+        inBlockScalar = false;
+      } else {
+        continue;
+      }
+    }
+
+    if (!parsed) continue;
+
+    const restTrimStart = parsed.rest.replace(/^[ \t]*/, '');
+    if (isBlockScalarHeader(restTrimStart)) {
+      inBlockScalar = true;
+      blockScalarIndent = parsed.indent;
+    }
+
+    minIndent = minIndent === null ? parsed.indent : Math.min(minIndent, parsed.indent);
+  }
+
+  return minIndent;
+}
+
+async function applyFrontmatterKeyRenameFix(
+  filePath: string,
+  issue: AuditIssue
+): Promise<FixResult> {
+  if (issue.hasConflict) {
+    return { file: filePath, issue, action: 'skipped', message: 'Key conflict detected' };
+  }
+
+  if (!issue.field || !issue.canonicalKey) {
+    return { file: filePath, issue, action: 'failed', message: 'Missing key metadata' };
+  }
+
+  const content = await readFile(filePath, 'utf-8');
+  const structural = readStructuralFrontmatterFromRaw(content);
+  if (!structural.primaryBlock || structural.yaml === null) {
+    return { file: filePath, issue, action: 'failed', message: 'No frontmatter block found' };
+  }
+
+  const { yamlStart, yamlEnd } = structural.primaryBlock;
+  const lines = splitLinesPreserveEol(content);
+
+  const topIndent = getTopLevelIndent(lines, yamlStart, yamlEnd);
+  if (topIndent === null) {
+    return { file: filePath, issue, action: 'failed', message: 'Could not determine frontmatter indentation' };
+  }
+
+  const fromKey = issue.field;
+  const toKey = issue.canonicalKey;
+  const targetIndexes: number[] = [];
+
+  let inBlockScalar = false;
+  let blockScalarIndent = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.startOffset < yamlStart || line.startOffset >= yamlEnd) continue;
+
+    const parsed = parseSimpleYamlKeyValueLine(line.text);
+
+    if (inBlockScalar) {
+      if (parsed && parsed.indent <= blockScalarIndent) {
+        inBlockScalar = false;
+      } else {
+        continue;
+      }
+    }
+
+    if (!parsed) continue;
+
+    const restTrimStart = parsed.rest.replace(/^[ \t]*/, '');
+    if (isBlockScalarHeader(restTrimStart)) {
+      inBlockScalar = true;
+      blockScalarIndent = parsed.indent;
+    }
+
+    if (parsed.indent !== topIndent) continue;
+    if (parsed.key !== fromKey) continue;
+
+    targetIndexes.push(i);
+  }
+
+  if (targetIndexes.length === 0) {
+    return { file: filePath, issue, action: 'skipped', message: `Key '${fromKey}' not found` };
+  }
+
+  if (targetIndexes.length > 1) {
+    return { file: filePath, issue, action: 'failed', message: `Multiple '${fromKey}' keys found` };
+  }
+
+  const targetIndex = targetIndexes[0]!;
+  const targetLine = lines[targetIndex]!;
+  const keyPattern = new RegExp(`^([ \t]*)${escapeRegExp(fromKey)}(\\s*:)`);
+  const match = targetLine.text.match(keyPattern);
+  if (!match) {
+    return { file: filePath, issue, action: 'failed', message: 'Unable to rewrite key line' };
+  }
+
+  const replacement = `${match[1]}${toKey}${match[2]}`;
+  lines[targetIndex] = {
+    ...targetLine,
+    text: replacement + targetLine.text.slice(match[0].length),
+  };
+
+  const updated = lines.map((line) => line.text + line.eol).join('');
+
+  if (!isDryRunEnabled()) {
+    await writeFile(filePath, updated, 'utf-8');
+  }
+
+  return { file: filePath, issue, action: 'fixed' };
+}
+
 // ============================================================================
 // Fix Application
 // ============================================================================
@@ -328,6 +301,10 @@ async function applyFix(
 
     if (issue.code === 'trailing-whitespace') {
       return await applyTrailingWhitespaceFix(filePath, issue);
+    }
+
+    if (issue.code === 'frontmatter-key-casing') {
+      return await applyFrontmatterKeyRenameFix(filePath, issue);
     }
 
     const parsed = await parseNote(filePath);
@@ -456,22 +433,25 @@ async function applyFix(
         break;
       }
       case 'unknown-enum-casing': {
-        if (issue.field && issue.canonicalValue) {
-          frontmatter[issue.field] = issue.canonicalValue;
+        const suggested = issue.canonicalValue ?? (issue.meta?.['suggested'] as string | undefined);
+        if (issue.field && suggested) {
+          frontmatter[issue.field] = suggested;
         } else {
           return { file: filePath, issue, action: 'failed', message: 'No canonical value provided' };
         }
         break;
       }
       case 'duplicate-list-values': {
-        if (issue.field && Array.isArray(frontmatter[issue.field])) {
-          // Case-insensitive deduplication preserving first occurrence
+        const currentValue = issue.field ? frontmatter[issue.field] : undefined;
+        if (issue.field && Array.isArray(currentValue)) {
+          if (!currentValue.every(item => typeof item === 'string')) {
+            return { file: filePath, issue, action: 'failed', message: 'Cannot dedupe non-string list values' };
+          }
           const seen = new Set<string>();
-          const deduped: unknown[] = [];
-          for (const item of frontmatter[issue.field] as unknown[]) {
-            const key = String(item).toLowerCase();
-            if (!seen.has(key)) {
-              seen.add(key);
+          const deduped: string[] = [];
+          for (const item of currentValue) {
+            if (!seen.has(item)) {
+              seen.add(item);
               deduped.push(item);
             }
           }
@@ -481,7 +461,6 @@ async function applyFix(
         }
         break;
       }
-      case 'frontmatter-key-casing':
       case 'singular-plural-mismatch': {
         if (!issue.field || !issue.canonicalKey) {
           return { file: filePath, issue, action: 'failed', message: 'No field or canonical key provided' };
@@ -497,9 +476,9 @@ async function applyFix(
         const existingValue = frontmatter[newKey];
         
         // Handle merge logic
-        if (existingValue !== undefined && !isEmpty(existingValue)) {
+        if (existingValue !== undefined && !isEffectivelyEmpty(existingValue)) {
           // Both have values - cannot auto-fix unless old is empty
-          if (!isEmpty(oldValue)) {
+          if (!isEffectivelyEmpty(oldValue)) {
             return { file: filePath, issue, action: 'failed', message: 'Both keys have values, manual merge required' };
           }
           // Old is empty, just delete it
@@ -548,7 +527,7 @@ async function applyStructuralFix(
     case 'frontmatter-not-at-top': {
       const eligible =
         !structural.atTop &&
-        structural.blocks.length === 1 &&
+        structural.frontmatterBlocks.length === 1 &&
         !structural.unterminated &&
         structural.yamlErrors.length === 0;
 
@@ -590,18 +569,9 @@ async function applyStructuralFix(
         keepIndex = matches[matches.length - 1]!.index;
       } else {
         // Auto-merge only when values are effectively the same, or one side is empty.
-        const values = matches.map((m) => {
-          const valueNode = m.pair.value as unknown;
-          if (valueNode && typeof valueNode === 'object') {
-            const toJson = (valueNode as Record<string, unknown>)['toJSON'];
-            if (typeof toJson === 'function') {
-              return (toJson as () => unknown)();
-            }
-          }
-          return null;
-        });
+        const values = matches.map((m) => extractYamlNodeValue(m.pair.value as unknown));
         const nonEmptyLocalIndexes = values
-          .map((v, i) => (!isEmpty(v) ? i : -1))
+          .map((v, i) => (!isEffectivelyEmpty(v) ? i : -1))
           .filter((i) => i >= 0);
 
         if (nonEmptyLocalIndexes.length === 0) {
@@ -617,7 +587,12 @@ async function applyStructuralFix(
           }
 
           if (uniqueNonEmpty.length !== 1) {
-            return { file: filePath, issue, action: 'failed', message: 'Duplicate values differ; use interactive resolution' };
+            return {
+              file: filePath,
+              issue,
+              action: 'skipped',
+              message: 'Duplicate values differ; run interactive fix',
+            };
           }
 
           // Keep the last non-empty occurrence.
@@ -808,21 +783,20 @@ export async function runAutoFix(
   results: FileAuditResult[],
   schema: LoadedSchema,
   vaultDir: string,
-  options?: { dryRun?: boolean }
+  options?: { dryRun?: boolean; dryRunReason?: FixSummary['dryRunReason'] }
 ): Promise<FixSummary> {
   const dryRun = options?.dryRun ?? false;
+  const dryRunReason = dryRun ? options?.dryRunReason : undefined;
   dryRunStorage.enterWith(dryRun);
   
   console.log(chalk.bold('Auditing vault...\n'));
-  if (dryRun) {
-    console.log(chalk.yellow('Dry run - no changes will be made\n'));
-  }
   console.log(chalk.bold('Auto-fixing unambiguous issues...\n'));
 
   let fixed = 0;
   let skipped = 0;
   let failed = 0;
   const manualReviewNeeded: { file: string; issue: AuditIssue }[] = [];
+  const resolvedNonFixable = new Set<AuditIssue>();
 
   for (const result of results) {
     const fixableIssues = result.issues.filter(i => i.autoFixable);
@@ -978,6 +952,7 @@ export async function runAutoFix(
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.green(`    ✓ Fixed ${issue.field}: [[${issue.targetName}]] → ${replacement}`));
             fixed++;
+            resolvedNonFixable.add(issue);
             continue; // Don't add to manual review
           } else {
             console.log(chalk.cyan(`  ${result.relativePath}`));
@@ -989,12 +964,17 @@ export async function runAutoFix(
       }
 
       if (issue.code === 'unknown-field' && issue.field) {
+        if (isBwrbBuiltinFrontmatterField(issue.field)) {
+          resolvedNonFixable.add(issue);
+          continue;
+        }
         const hasBetterAutoFix = fixableIssues.some(
           i =>
             (i.code === 'frontmatter-key-casing' || i.code === 'singular-plural-mismatch') &&
             i.field === issue.field
         );
         if (hasBetterAutoFix) {
+          resolvedNonFixable.add(issue);
           continue; // Defer to specialized auto-fix
         }
 
@@ -1028,15 +1008,19 @@ export async function runAutoFix(
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.green(`    ✓ Migrated ${issue.field} → ${targetField}`));
             fixed++;
+            resolvedNonFixable.add(issue);
             continue; // Don't add to manual review
           }
         } catch {
           // Fall through to manual review
         }
       }
+    }
 
-      // Queue for manual review if not auto-fixed
-      manualReviewNeeded.push({ file: result.relativePath, issue });
+    for (const issue of nonFixableIssues) {
+      if (!resolvedNonFixable.has(issue)) {
+        registerManualReview(manualReviewNeeded, result.relativePath, issue);
+      }
     }
 
     // Apply auto-fixes
@@ -1056,6 +1040,7 @@ export async function runAutoFix(
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to add type: ${fixResult.message}`));
@@ -1075,6 +1060,7 @@ export async function runAutoFix(
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
             skipped++;
+            registerManualReview(manualReviewNeeded, result.relativePath, issue);
           } else {
             console.log(chalk.cyan(`  ${result.relativePath}`));
             console.log(chalk.red(`    ✗ Failed to fix ${issue.field}: ${fixResult.message}`));
@@ -1082,7 +1068,7 @@ export async function runAutoFix(
           }
         } else {
           skipped++;
-          manualReviewNeeded.push({ file: result.relativePath, issue });
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         }
       } else if (issue.code === 'format-violation' && issue.field && issue.expectedFormat) {
         // Auto-fix format violations
@@ -1106,6 +1092,7 @@ export async function runAutoFix(
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to move frontmatter: ${fixResult.message}`));
@@ -1121,6 +1108,7 @@ export async function runAutoFix(
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to resolve duplicate keys: ${fixResult.message}`));
@@ -1136,6 +1124,7 @@ export async function runAutoFix(
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to fix malformed wikilink: ${fixResult.message}`));
@@ -1152,45 +1141,46 @@ export async function runAutoFix(
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to trim ${issue.field}: ${fixResult.message}`));
           failed++;
         }
-       } else if (issue.code === 'invalid-boolean-coercion' && issue.field) {
-         // Auto-fix boolean coercion
-         const fixResult = await applyFix(schema, result.path, issue);
-         if (fixResult.action === 'fixed') {
-           console.log(chalk.cyan(`  ${result.relativePath}`));
-           console.log(chalk.green(`    ✓ Coerced ${issue.field} to boolean`));
-           fixed++;
-         } else {
-           console.log(chalk.cyan(`  ${result.relativePath}`));
-           console.log(chalk.red(`    ✗ Failed to coerce ${issue.field}: ${fixResult.message}`));
-           failed++;
-         }
-       } else if (issue.code === 'wrong-scalar-type' && issue.field) {
-         const fixResult = await applyFix(schema, result.path, issue);
-         if (fixResult.action === 'fixed') {
-           console.log(chalk.cyan(`  ${result.relativePath}`));
-           console.log(chalk.green(`    ✓ Coerced ${issue.field} to ${issue.expected}`));
-           fixed++;
-         } else if (fixResult.action === 'skipped') {
-           console.log(chalk.cyan(`  ${result.relativePath}`));
-           console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
-           skipped++;
-         } else {
-           console.log(chalk.cyan(`  ${result.relativePath}`));
-           console.log(chalk.red(`    ✗ Failed to coerce ${issue.field}: ${fixResult.message}`));
-           failed++;
-         }
-       } else if (issue.code === 'unknown-enum-casing' && issue.field && issue.canonicalValue) {
-
-        // Auto-fix enum casing
+      } else if (issue.code === 'invalid-boolean-coercion' && issue.field) {
+        // Auto-fix boolean coercion
         const fixResult = await applyFix(schema, result.path, issue);
         if (fixResult.action === 'fixed') {
           console.log(chalk.cyan(`  ${result.relativePath}`));
-          console.log(chalk.green(`    ✓ Fixed ${issue.field} casing: ${issue.value} → ${issue.canonicalValue}`));
+          console.log(chalk.green(`    ✓ Coerced ${issue.field} to boolean`));
+          fixed++;
+        } else {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.red(`    ✗ Failed to coerce ${issue.field}: ${fixResult.message}`));
+          failed++;
+        }
+      } else if (issue.code === 'wrong-scalar-type' && issue.field) {
+        const fixResult = await applyFix(schema, result.path, issue);
+        if (fixResult.action === 'fixed') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.green(`    ✓ Coerced ${issue.field} to ${issue.expected}`));
+          fixed++;
+        } else if (fixResult.action === 'skipped') {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.yellow(`    ⚠ ${fixResult.message}`));
+          skipped++;
+        } else {
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.red(`    ✗ Failed to coerce ${issue.field}: ${fixResult.message}`));
+          failed++;
+        }
+      } else if (issue.code === 'unknown-enum-casing' && issue.field && (issue.canonicalValue || issue.meta?.['suggested'])) {
+        // Auto-fix enum casing
+        const fixResult = await applyFix(schema, result.path, issue);
+        if (fixResult.action === 'fixed') {
+          const canonicalValue = issue.canonicalValue ?? (issue.meta?.['suggested'] as string | undefined) ?? '';
+          console.log(chalk.cyan(`  ${result.relativePath}`));
+          console.log(chalk.green(`    ✓ Fixed ${issue.field} casing: ${issue.value} → ${canonicalValue}`));
           fixed++;
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
@@ -1218,10 +1208,11 @@ export async function runAutoFix(
           fixed++;
         } else if (fixResult.action === 'skipped') {
           skipped++;
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else if (fixResult.action === 'failed' && fixResult.message?.includes('manual merge')) {
           // Conflict case - requires interactive resolution
           skipped++;
-          manualReviewNeeded.push({ file: result.relativePath, issue });
+          registerManualReview(manualReviewNeeded, result.relativePath, issue);
         } else {
           console.log(chalk.cyan(`  ${result.relativePath}`));
           console.log(chalk.red(`    ✗ Failed to rename ${issue.field}: ${fixResult.message}`));
@@ -1250,6 +1241,7 @@ export async function runAutoFix(
 
   return {
     dryRun,
+    ...(dryRunReason ? { dryRunReason } : {}),
     fixed,
     skipped,
     failed,
@@ -1271,17 +1263,22 @@ export async function runInteractiveFix(
   options?: { dryRun?: boolean }
 ): Promise<FixSummary> {
   const dryRun = options?.dryRun ?? false;
+  const dryRunReason = dryRun ? 'explicit' : undefined;
   dryRunStorage.enterWith(dryRun);
   const context: FixContext = { schema, vaultDir, dryRun };
   
   console.log(chalk.bold('Auditing vault...\n'));
-  if (dryRun) {
-    console.log(chalk.yellow('Dry run - no changes will be made\n'));
-  }
 
   if (results.length === 0) {
     console.log(chalk.green('✓ No issues found\n'));
-    return { dryRun, fixed: 0, skipped: 0, failed: 0, remaining: 0 };
+    return {
+      dryRun,
+      ...(dryRunReason ? { dryRunReason } : {}),
+      fixed: 0,
+      skipped: 0,
+      failed: 0,
+      remaining: 0,
+    };
   }
 
   let fixed = 0;
@@ -1325,7 +1322,14 @@ export async function runInteractiveFix(
   }
   remaining = remaining - fixed;
 
-  return { dryRun, fixed, skipped, failed, remaining };
+  return {
+    dryRun,
+    ...(dryRunReason ? { dryRunReason } : {}),
+    fixed,
+    skipped,
+    failed,
+    remaining,
+  };
 }
 
 /**
@@ -1583,6 +1587,11 @@ async function handleUnknownFieldFix(
 ): Promise<'fixed' | 'skipped' | 'failed' | 'quit'> {
   if (!issue.field) return 'skipped';
 
+  if (isBwrbBuiltinFrontmatterField(issue.field)) {
+    console.log(chalk.dim(`    → Skipped (system-managed field: ${issue.field})`));
+    return 'skipped';
+  }
+
   if (issue.suggestion) {
     console.log(chalk.dim(`    ${issue.suggestion}`));
   }
@@ -1636,9 +1645,7 @@ async function handleUnknownFieldFix(
 
   const { field: targetField, typeMismatch } = choice;
   const existingTarget = parsed.frontmatter[targetField];
-  const targetHasValue = !isEmpty(existingTarget);
-
-  const shouldConfirmMigration = !targetHasValue;
+  const targetHasValue = !isEffectivelyEmpty(existingTarget);
 
   if (typeMismatch) {
     const actualShape = getValueShape(issue.value);
@@ -1660,15 +1667,6 @@ async function handleUnknownFieldFix(
     const overwriteConfirm = await promptConfirm(`    Overwrite existing '${targetField}' value?`);
     if (overwriteConfirm === null) return 'quit';
     if (!overwriteConfirm) {
-      console.log(chalk.dim('    → Skipped'));
-      return 'skipped';
-    }
-  }
-
-  if (shouldConfirmMigration) {
-    const migrateConfirm = await promptConfirm(`    → Migrate '${issue.field}' → '${targetField}'?`);
-    if (migrateConfirm === null) return 'quit';
-    if (!migrateConfirm) {
       console.log(chalk.dim('    → Skipped'));
       return 'skipped';
     }
@@ -2440,7 +2438,7 @@ async function handleSelfReferenceFix(
   }
 
   if (selected === '[clear field]') {
-    const fixResult = await applyFix(schema, result.path, issue, '');
+    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, '');
     if (fixResult.action === 'fixed') {
       console.log(chalk.green(`    ✓ Cleared ${issue.field}`));
       return 'fixed';
@@ -2449,7 +2447,7 @@ async function handleSelfReferenceFix(
     return 'failed';
   }
 
-  const fixResult = await applyFix(schema, result.path, issue, selected);
+  const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, selected);
   if (fixResult.action === 'fixed') {
     console.log(chalk.green(`    ✓ Updated ${issue.field}: ${selected}`));
     return 'fixed';
@@ -2493,7 +2491,7 @@ async function handleAmbiguousLinkTargetFix(
   }
 
   if (selected === '[clear field]') {
-    const fixResult = await applyFix(schema, result.path, issue, '');
+    const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, '');
     if (fixResult.action === 'fixed') {
       console.log(chalk.green(`    ✓ Cleared ${issue.field}`));
       return 'fixed';
@@ -2502,7 +2500,7 @@ async function handleAmbiguousLinkTargetFix(
     return 'failed';
   }
 
-  const fixResult = await applyFix(schema, result.path, issue, selected);
+  const fixResult = await applyFix(schema, result.path, { ...issue, code: 'invalid-option' }, selected);
   if (fixResult.action === 'fixed') {
     console.log(chalk.green(`    ✓ Updated ${issue.field}: ${selected}`));
     return 'fixed';
@@ -2873,7 +2871,7 @@ async function handleKeyCasingFix(
   }
 
   // Check if there's a conflict
-  if (issue.hasConflict && issue.conflictValue !== undefined && !isEmpty(issue.conflictValue)) {
+  if (issue.hasConflict && issue.conflictValue !== undefined && !isEffectivelyEmpty(issue.conflictValue)) {
     // Both keys have values - need user decision
     console.log(chalk.dim(`    Current '${issue.field}': ${JSON.stringify(issue.value)}`));
     console.log(chalk.dim(`    Existing '${issue.canonicalKey}': ${JSON.stringify(issue.conflictValue)}`));

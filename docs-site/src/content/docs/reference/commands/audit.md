@@ -23,6 +23,7 @@ The target argument is auto-detected as type, path (contains `/`), or where expr
 | `-p, --path <glob>` | Filter by file path pattern |
 | `-w, --where <expr>` | Filter by frontmatter expression (repeatable) |
 | `-b, --body <query>` | Filter by body content |
+| `-a, --all` | Target all files (explicit vault-wide selector) |
 
 ### Issue Filtering
 
@@ -37,8 +38,13 @@ The target argument is auto-detected as type, path (contains `/`), or where expr
 
 | Option | Description |
 |--------|-------------|
-| `--fix` | Interactive repair mode |
+| `--fix` | Interactive repair mode (writes by default; requires explicit targeting) |
 | `--auto` | With `--fix`: automatically apply unambiguous fixes |
+| `--dry-run` | With `--fix`: preview fixes without writing |
+| `--execute` | With `--fix --auto`: apply fixes (omit to preview) |
+
+Repair mode writes by default and requires explicit targeting (selectors or `--all`).
+Use `--dry-run` to preview fixes without writing.
 
 ### Output
 
@@ -53,11 +59,13 @@ The target argument is auto-detected as type, path (contains `/`), or where expr
 | `orphan-file` | File in managed directory but no `type` field |
 | `invalid-type` | Type field value not recognized in schema |
 | `missing-required` | Required field is missing |
-| `invalid-enum` | Field value not in allowed enum values |
+| `invalid-option` | Field value not in allowed option values |
 | `unknown-field` | Field not defined in schema (warning by default) |
 | `wrong-directory` | File location doesn't match its type's output_dir |
 | `format-violation` | Field value doesn't match expected format (wikilink, etc.) |
 | `stale-reference` | Wikilink points to non-existent file |
+
+Note: built-in fields written by `bwrb new` (currently `id` and `name`) are always allowed and do not produce `unknown-field` issues.
 
 ## Examples
 
@@ -99,7 +107,16 @@ bwrb audit --allow-field custom --allow-field legacy
 ### Repair Mode
 
 ```bash
-# Interactive fix mode (requires explicit targeting)
+# Fix issues across the entire vault (explicit targeting required)
+bwrb audit --all --fix
+
+# Preview fixes across the entire vault
+bwrb audit --all --fix --dry-run --auto
+
+# Interactive fix mode (writes by default; requires explicit targeting)
+bwrb audit --all --fix
+
+# Interactive fix mode for a subset
 bwrb audit --path "Ideas/**" --fix
 
 # Preview fixes without writing

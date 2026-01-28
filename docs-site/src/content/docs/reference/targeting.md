@@ -60,6 +60,7 @@ bwrb audit --where "isEmpty(tags)"
 - Supports boolean operators: `&&`, `||`, `!`
 - Supports functions: `isEmpty()`, `contains()`, `startsWith()`
 - Multiple `--where` flags are ANDed together
+- Field names may include hyphens and are treated literally in `--where` (e.g., `creation-date == '2026-01-28'`).
 
 **Type-checking behavior:**
 - With `--type`: strict validation (error on unknown fields)
@@ -203,6 +204,20 @@ bwrb list --type task --output link      # [[Task 1]], [[Task 2]], ...
 bwrb list --type task --output tree      # Hierarchical display
 bwrb search "TODO" --output content      # Full file with matches
 ```
+
+## Pagination (interactive picker)
+
+When a command needs you to pick from multiple results, Bowerbird uses an interactive picker. The pagination keys below apply to the **numbered** picker (and `auto` when it falls back to numbered). If you use `--picker fzf`, fzf provides its own navigation.
+
+- Page size: 10 items (pagination appears when there are more than 10 options)
+- Keys: `-` previous page, `+`/`=` next page
+- `1-9` selects items 1-9 on the current page
+- `0` selects item 10 on the current page
+- `Up/Down` (or `j/k`) moves the highlight
+- `Enter` confirms the highlighted item
+- `Ctrl+C` / `Escape` cancels the picker
+
+`--output json` is never interactive and never paginates.
 
 ## See Also
 
