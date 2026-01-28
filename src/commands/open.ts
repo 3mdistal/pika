@@ -11,7 +11,7 @@ import { Command } from "commander";
 import { basename, join } from "node:path";
 import { spawn } from "node:child_process";
 import { loadSchema, detectObsidianVault } from "../lib/schema.js";
-import { resolveVaultDir } from "../lib/vault.js";
+import { resolveVaultDirWithSelection } from "../lib/vaultSelection.js";
 import { getGlobalOpts } from "../lib/command.js";
 import { buildNoteIndex, type ManagedFile } from "../lib/navigation.js";
 import { resolveAndPick, parsePickerMode } from "../lib/picker.js";
@@ -24,6 +24,7 @@ import {
 } from "../lib/output.js";
 import { resolveTargets, type TargetingOptions } from "../lib/targeting.js";
 import type { ResolvedConfig } from "../types/schema.js";
+import { UserCancelledError } from "../lib/errors.js";
 
 // App modes for opening notes
 // - system: Open with OS default handler (default)
@@ -297,7 +298,9 @@ Examples:
       // Merge global options with command options (local --vault takes precedence)
       const globalOpts = getGlobalOpts(cmd);
       const effectiveVault = options.vault || globalOpts.vault;
-      const vaultDir = resolveVaultDir(effectiveVault ? { vault: effectiveVault } : {});
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (effectiveVault) vaultOptions.vault = effectiveVault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Parse picker mode
@@ -367,6 +370,14 @@ Examples:
       // Open the selected note
       await openNote(vaultDir, result.file.relativePath, appMode, schema.config, jsonMode);
     } catch (error) {
+      if (error instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError("Cancelled", { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log("Cancelled.");
+        process.exit(1);
+      }
       const message = error instanceof Error ? error.message : String(error);
       if (jsonMode) {
         printJson(jsonError(message));

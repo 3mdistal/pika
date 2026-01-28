@@ -35,6 +35,10 @@ All notable changes to Bowerbird are documented in this file.
 
 ### Added
 
+- **Phase 2 vault auto-detection with downward discovery and picker** (#338)
+  - When not inside a vault and `--vault` is missing, bwrb now discovers vaults below `cwd`
+  - Auto-selects the only match, prompts in TTY when multiple matches
+  - Non-interactive or `--output json` now errors with candidate list
 - **Audit --fix Phase 5: Type coercion fixes** (#272)
   - `wrong-scalar-type`: safe string -> number/boolean coercion in `audit --fix --auto`
   - `invalid-date-format`: interactive prompts with ISO-ish suggestions for date fields

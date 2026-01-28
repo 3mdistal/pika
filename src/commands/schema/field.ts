@@ -7,7 +7,7 @@ import { Command } from 'commander';
 import { getGlobalOpts } from '../../lib/command.js';
 import chalk from 'chalk';
 import { loadSchema } from '../../lib/schema.js';
-import { resolveVaultDir } from '../../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../../lib/vaultSelection.js';
 import {
   printError,
   printSuccess,
@@ -21,6 +21,7 @@ import {
   jsonError,
   ExitCodes,
 } from '../../lib/output.js';
+import { UserCancelledError } from '../../lib/errors.js';
 import { loadRawSchemaJson, writeSchema } from '../../lib/schema-writer.js';
 import { validateFieldName } from './helpers/validation.js';
 import { promptTypePicker, promptFieldPicker } from './helpers/pickers.js';
@@ -55,7 +56,9 @@ export function registerNewFieldCommand(newCommand: Command): void {
 
       try {
         const globalOpts = getGlobalOpts(cmd);
-        const vaultDir = resolveVaultDir(globalOpts);
+        const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+        if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+        const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -131,6 +134,14 @@ export function registerNewFieldCommand(newCommand: Command): void {
           printSuccess(`Field "${fieldName}" added to type "${typeName}"`);
         }
       } catch (err) {
+        if (err instanceof UserCancelledError) {
+          if (jsonMode) {
+            printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          console.log('Cancelled.');
+          process.exit(1);
+        }
         const message = err instanceof Error ? err.message : String(err);
         if (jsonMode) {
           printJson(jsonError(message));
@@ -152,7 +163,9 @@ export function registerEditFieldCommand(editCommand: Command): void {
 
       try {
         const globalOpts = getGlobalOpts(cmd);
-        const vaultDir = resolveVaultDir(globalOpts);
+        const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+        if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+        const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -267,6 +280,14 @@ export function registerEditFieldCommand(editCommand: Command): void {
 
         printSuccess(`Finished editing field "${typeName}.${fieldName}"`);
       } catch (err) {
+        if (err instanceof UserCancelledError) {
+          if (jsonMode) {
+            printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          console.log('Cancelled.');
+          process.exit(1);
+        }
         const message = err instanceof Error ? err.message : String(err);
         if (jsonMode) {
           printJson(jsonError(message));
@@ -290,7 +311,9 @@ export function registerDeleteFieldCommand(deleteCommand: Command): void {
 
       try {
         const globalOpts = getGlobalOpts(cmd);
-        const vaultDir = resolveVaultDir(globalOpts);
+        const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+        if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+        const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
         const schema = await loadSchema(vaultDir);
 
         // Get type name if not provided
@@ -371,6 +394,14 @@ export function registerDeleteFieldCommand(deleteCommand: Command): void {
           printSuccess(`Field "${fieldName}" deleted from type "${typeName}"`);
         }
       } catch (err) {
+        if (err instanceof UserCancelledError) {
+          if (jsonMode) {
+            printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+            process.exit(ExitCodes.VALIDATION_ERROR);
+          }
+          console.log('Cancelled.');
+          process.exit(1);
+        }
         const message = err instanceof Error ? err.message : String(err);
         if (jsonMode) {
           printJson(jsonError(message));

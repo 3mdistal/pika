@@ -14,6 +14,9 @@ import {
 } from './schema.js';
 
 const SCHEMA_RELATIVE_PATH = '.bwrb/schema.json';
+const DEFAULT_MAX_DEPTH = 6;
+const DEFAULT_MAX_CANDIDATES = 25;
+const DEFAULT_MAX_DIRS_VISITED = 5000;
 
 function hasVaultSchema(vaultDir: string): boolean {
   return existsSync(join(vaultDir, SCHEMA_RELATIVE_PATH));
@@ -34,6 +37,101 @@ function findUpVaultDir(startDir: string): string | null {
   }
 }
 
+export class VaultResolutionError extends Error {
+  candidates: string[];
+  cwd: string;
+  truncated: boolean;
+
+  constructor(cwd: string, candidates: string[], truncated: boolean) {
+    super(`Multiple vaults found under ${cwd}. Re-run with --vault <path>.`);
+    this.name = 'VaultResolutionError';
+    this.candidates = candidates;
+    this.cwd = cwd;
+    this.truncated = truncated;
+  }
+}
+
+export interface DiscoverVaultOptions {
+  maxDepth?: number;
+  maxCandidates?: number;
+  maxDirsVisited?: number;
+}
+
+export interface DiscoverVaultResult {
+  candidates: string[];
+  truncated: boolean;
+}
+
+async function discoverVaultRootsDown(
+  startDir: string,
+  options: DiscoverVaultOptions = {}
+): Promise<DiscoverVaultResult> {
+  const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
+  const maxDirsVisited = options.maxDirsVisited ?? DEFAULT_MAX_DIRS_VISITED;
+  const rootDir = resolve(startDir);
+  const candidates: string[] = [];
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: rootDir, depth: 0 }];
+  let visited = 0;
+
+  while (queue.length > 0 && candidates.length < maxCandidates && visited < maxDirsVisited) {
+    const next = queue.shift();
+    if (!next) {
+      break;
+    }
+    visited += 1;
+    const { dir, depth } = next;
+
+    if (hasVaultSchema(dir)) {
+      candidates.push(dir);
+      continue;
+    }
+
+    if (depth >= maxDepth) {
+      continue;
+    }
+
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    entries.sort((a, b) => {
+      if (a.name < b.name) return -1;
+      if (a.name > b.name) return 1;
+      return 0;
+    });
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (entry.isSymbolicLink()) {
+        continue;
+      }
+      if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+        continue;
+      }
+
+      queue.push({ dir: join(dir, entry.name), depth: depth + 1 });
+    }
+  }
+
+  const truncated = queue.length > 0 && (candidates.length >= maxCandidates || visited >= maxDirsVisited);
+  return { candidates, truncated };
+}
+
+export interface ResolveVaultOptions {
+  vault?: string;
+  cwd?: string;
+  allowFindDown?: boolean;
+  maxDepth?: number;
+  maxCandidates?: number;
+  maxDirsVisited?: number;
+}
+
 /**
  * Resolve vault directory.
  *
@@ -41,9 +139,9 @@ function findUpVaultDir(startDir: string): string | null {
  * 1) --vault option
  * 2) find-up nearest ancestor containing .bwrb/schema.json
  * 3) BWRB_VAULT env var
- * 4) cwd (error if not a vault)
+ * 4) find-down under cwd (Phase 2)
  */
-export function resolveVaultDir(options: { vault?: string }): string {
+export async function resolveVaultDir(options: ResolveVaultOptions = {}): Promise<string> {
   if (options.vault) {
     if (!hasVaultSchema(options.vault)) {
       throw new Error(
@@ -53,7 +151,8 @@ export function resolveVaultDir(options: { vault?: string }): string {
     return options.vault;
   }
 
-  const found = findUpVaultDir(process.cwd());
+  const cwd = options.cwd ?? process.cwd();
+  const found = findUpVaultDir(cwd);
   if (found) {
     return found;
   }
@@ -68,11 +167,32 @@ export function resolveVaultDir(options: { vault?: string }): string {
     return envVault;
   }
 
-  const cwd = process.cwd();
-  throw new Error(
-    `Could not resolve vault: searched upward from "${cwd}" for ${SCHEMA_RELATIVE_PATH}. ` +
-      `Try "--vault <path>" or run "bwrb init".`
-  );
+  if (options.allowFindDown === false) {
+    throw new Error(
+      `Could not resolve vault: searched upward from "${cwd}" for ${SCHEMA_RELATIVE_PATH}. ` +
+        `Try "--vault <path>" or run "bwrb init".`
+    );
+  }
+
+  const discoverOptions: DiscoverVaultOptions = {};
+  if (options.maxDepth !== undefined) discoverOptions.maxDepth = options.maxDepth;
+  if (options.maxCandidates !== undefined) discoverOptions.maxCandidates = options.maxCandidates;
+  if (options.maxDirsVisited !== undefined) discoverOptions.maxDirsVisited = options.maxDirsVisited;
+
+  const { candidates, truncated } = await discoverVaultRootsDown(cwd, discoverOptions);
+
+  if (candidates.length === 0) {
+    throw new Error(
+      `Could not resolve vault: searched upward from "${cwd}" for ${SCHEMA_RELATIVE_PATH} ` +
+        `and downward for vaults. Try "--vault <path>" or run "bwrb init".`
+    );
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0]!;
+  }
+
+  throw new VaultResolutionError(cwd, candidates, truncated);
 }
 
 /**

@@ -13,7 +13,6 @@ import {
 } from '../lib/schema.js';
 import { writeNote, generateBodyWithContent, generateBodySections, mergeBodySectionContent, extractSectionItems, parseBodyInput } from '../lib/frontmatter.js';
 import {
-  resolveVaultDir,
   queryByType,
   formatValue,
   typeCanBeOwned,
@@ -22,6 +21,7 @@ import {
   ensureOwnedOutputDir,
   type OwnerNoteRef,
 } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import {
   promptSelection,
@@ -205,7 +205,10 @@ Template management:
     const typePath = options.type ?? positionalType;
     
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // JSON mode: non-interactive creation

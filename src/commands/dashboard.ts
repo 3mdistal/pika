@@ -11,7 +11,7 @@ import {
 import { resolveTargets, type TargetingOptions } from '../lib/targeting.js';
 import { loadSchema, getTypeDefByPath } from '../lib/schema.js';
 import { setDefaultDashboard } from '../lib/schema-writer.js';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import {
   promptInput,
@@ -101,7 +101,10 @@ async function runDashboard(
   let jsonMode = requestedFormat === 'json';
 
   try {
-    const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+    const globalOpts = getGlobalOpts(cmd);
+    const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+    if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+    const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
 
     // 1. Load dashboard by name (before schema to fail fast on bad name)
     const dashboard = await getDashboard(vaultDir, name);
@@ -178,7 +181,10 @@ async function runDashboardPickerOrDefault(
   const jsonMode = options.output === 'json';
 
   try {
-    const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+    const globalOpts = getGlobalOpts(cmd);
+    const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+    if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+    const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
     const schema = await loadSchema(vaultDir);
     // Load dashboards once and derive names from it (avoid double I/O)
     const dashboardsFile = await loadDashboards(vaultDir);
@@ -275,7 +281,10 @@ dashboardCommand
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const dashboardsFile = await loadDashboards(vaultDir);
       const dashboards = dashboardsFile.dashboards;
       const names = Object.keys(dashboards).sort((a, b) => a.localeCompare(b));
@@ -397,7 +406,10 @@ Examples:
     const jsonMode = options.json !== undefined;
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Check if dashboard already exists
@@ -663,7 +675,10 @@ Examples:
     const jsonMode = options.json !== undefined;
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // If no name provided, show picker to select dashboard
@@ -962,7 +977,10 @@ Examples:
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Determine which dashboard to delete

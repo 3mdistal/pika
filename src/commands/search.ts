@@ -9,7 +9,7 @@
 import { Command } from 'commander';
 import { readFile } from 'fs/promises';
 import { basename } from 'path';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { loadSchema, getTypeDefByPath, getAllFieldsForType } from '../lib/schema.js';
 import { printError, printSuccess } from '../lib/prompt.js';
@@ -32,6 +32,7 @@ import {
 import { parseNote } from '../lib/frontmatter.js';
 import { applyFrontmatterFilters } from '../lib/query.js';
 import { minimatch } from 'minimatch';
+import { UserCancelledError } from '../lib/errors.js';
 
 // ============================================================================
 // Types
@@ -263,7 +264,10 @@ Examples:
     }
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Dispatch to appropriate search mode
@@ -273,6 +277,14 @@ Examples:
         await handleNameSearch(query, options, vaultDir, schema, jsonMode, outputFormat);
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));
