@@ -9,7 +9,7 @@ import {
 } from '../lib/schema.js';
 import { extractWikilinkTarget } from '../lib/audit/types.js';
 
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { printError } from '../lib/prompt.js';
 import {
@@ -20,6 +20,7 @@ import {
   warnDeprecated,
   type ListOutputFormat,
 } from '../lib/output.js';
+import { UserCancelledError } from '../lib/errors.js';
 import { openNote, resolveAppMode } from './open.js';
 import { pickFile, parsePickerMode } from '../lib/picker.js';
 import type { LoadedSchema, DashboardDefinition } from '../types/schema.js';
@@ -173,7 +174,10 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
     const jsonMode = outputFormat === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Pre-flight check: if --save-as is provided without --force, check if dashboard exists
@@ -332,6 +336,14 @@ Note: In zsh, use single quotes for expressions with '!' to avoid history expans
         }
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message));
@@ -747,5 +759,3 @@ function printTree(
     printNode(root, '', isLast);
   }
 }
-
-

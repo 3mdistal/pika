@@ -21,7 +21,7 @@ import {
 import { discoverManagedFiles } from '../lib/discovery.js';
 import { parseNote } from '../lib/frontmatter.js';
 import { filterByPath } from '../lib/targeting.js';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { printError, promptConfirm } from '../lib/prompt.js';
 import { UserCancelledError } from '../lib/errors.js';
@@ -175,7 +175,10 @@ Examples:
     const jsonMode = options.output === 'json';
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Handle --text deprecation

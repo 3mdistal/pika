@@ -10,7 +10,7 @@ import {
   loadSchema,
   getTypeDefByPath,
 } from '../lib/schema.js';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { getGlobalOpts } from '../lib/command.js';
 import { printError, printWarning } from '../lib/prompt.js';
 import {
@@ -23,6 +23,7 @@ import {
   parsePositionalArg,
   hasAnyTargeting,
 } from '../lib/targeting.js';
+import { UserCancelledError } from '../lib/errors.js';
 
 // Import from audit modules
 import {
@@ -212,7 +213,10 @@ Examples:
     }
 
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
 
       // Handle --text deprecation
@@ -352,6 +356,14 @@ Examples:
         process.exit(ExitCodes.VALIDATION_ERROR);
       }
     } catch (err) {
+      if (err instanceof UserCancelledError) {
+        if (jsonMode) {
+          printJson(jsonError('Cancelled', { code: ExitCodes.VALIDATION_ERROR }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (jsonMode) {
         printJson(jsonError(message, { code: ExitCodes.VALIDATION_ERROR }));

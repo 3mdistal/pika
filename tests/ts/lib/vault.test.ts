@@ -10,6 +10,7 @@ import {
   formatValue,
   queryByType,
   getOutputDir,
+  VaultResolutionError,
 } from '../../../src/lib/vault.js';
 import { loadSchema } from '../../../src/lib/schema.js';
 import { createTestVault, cleanupTestVault } from '../fixtures/setup.js';
@@ -42,9 +43,9 @@ describe('vault', () => {
       }
     });
 
-    it('should default to test fixture vault via BWRB_VAULT (regression test for vault isolation)', () => {
+    it('should default to test fixture vault via BWRB_VAULT (regression test for vault isolation)', async () => {
       // tests/ts/setup.ts pins BWRB_VAULT to a fixture vault as a safety net.
-      const result = resolveVaultDir({});
+      const result = await resolveVaultDir({});
       expect(result).toContain('tests/fixtures/vault');
     });
 
@@ -55,7 +56,7 @@ describe('vault', () => {
         process.chdir(join(vaultDir, 'Ideas'));
 
         const relativeOptionVault = relative(process.cwd(), optionVaultDir);
-        const result = resolveVaultDir({ vault: relativeOptionVault });
+        const result = await resolveVaultDir({ vault: relativeOptionVault });
         expect(result).toBe(relativeOptionVault);
       } finally {
         await cleanupTestVault(optionVaultDir);
@@ -66,7 +67,7 @@ describe('vault', () => {
       process.env['BWRB_VAULT'] = vaultDir;
       process.chdir(join(vaultDir, 'Ideas'));
 
-      const result = resolveVaultDir({});
+      const result = await resolveVaultDir({});
       expect(result).toBe(await realpath(vaultDir));
     });
 
@@ -77,7 +78,7 @@ describe('vault', () => {
 
       try {
         process.chdir(join(nestedVaultDir, '.bwrb'));
-        const result = resolveVaultDir({});
+        const result = await resolveVaultDir({});
         expect(result).toBe(await realpath(nestedVaultDir));
       } finally {
         await rm(nestedVaultDir, { recursive: true, force: true });
@@ -90,10 +91,87 @@ describe('vault', () => {
         process.chdir(nonVaultDir);
         process.env['BWRB_VAULT'] = vaultDir;
 
-        const result = resolveVaultDir({});
+        const result = await resolveVaultDir({});
         expect(result).toBe(vaultDir);
       } finally {
         await rm(nonVaultDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should resolve to a single vault found below cwd', async () => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'bwrb-find-down-'));
+      try {
+        const childVault = join(baseDir, 'child-vault');
+        await mkdir(join(childVault, '.bwrb'), { recursive: true });
+        await writeFile(join(childVault, '.bwrb', 'schema.json'), '{}');
+
+        process.chdir(baseDir);
+        delete process.env['BWRB_VAULT'];
+
+        const result = await resolveVaultDir({});
+        expect(result).toBe(childVault);
+      } finally {
+        await rm(baseDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should throw when multiple vaults are found below cwd', async () => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'bwrb-multi-vault-'));
+      try {
+        const firstVault = join(baseDir, 'vault-a');
+        const secondVault = join(baseDir, 'vault-b');
+        await mkdir(join(firstVault, '.bwrb'), { recursive: true });
+        await mkdir(join(secondVault, '.bwrb'), { recursive: true });
+        await writeFile(join(firstVault, '.bwrb', 'schema.json'), '{}');
+        await writeFile(join(secondVault, '.bwrb', 'schema.json'), '{}');
+
+        process.chdir(baseDir);
+        delete process.env['BWRB_VAULT'];
+
+        let error: unknown;
+        try {
+          await resolveVaultDir({});
+        } catch (err) {
+          error = err;
+        }
+
+        expect(error).toBeInstanceOf(VaultResolutionError);
+        const resolutionError = error as VaultResolutionError;
+        expect(resolutionError.candidates).toEqual([firstVault, secondVault]);
+        expect(resolutionError.truncated).toBe(false);
+      } finally {
+        await rm(baseDir, { recursive: true, force: true });
+      }
+    });
+
+    it('should skip nested vaults when discovering candidates', async () => {
+      const baseDir = await mkdtemp(join(tmpdir(), 'bwrb-nested-vault-'));
+      try {
+        const firstVault = join(baseDir, 'vault-a');
+        const nestedVault = join(firstVault, 'nested');
+        const secondVault = join(baseDir, 'vault-b');
+        await mkdir(join(firstVault, '.bwrb'), { recursive: true });
+        await mkdir(join(nestedVault, '.bwrb'), { recursive: true });
+        await mkdir(join(secondVault, '.bwrb'), { recursive: true });
+        await writeFile(join(firstVault, '.bwrb', 'schema.json'), '{}');
+        await writeFile(join(nestedVault, '.bwrb', 'schema.json'), '{}');
+        await writeFile(join(secondVault, '.bwrb', 'schema.json'), '{}');
+
+        process.chdir(baseDir);
+        delete process.env['BWRB_VAULT'];
+
+        let error: unknown;
+        try {
+          await resolveVaultDir({});
+        } catch (err) {
+          error = err;
+        }
+
+        expect(error).toBeInstanceOf(VaultResolutionError);
+        const resolutionError = error as VaultResolutionError;
+        expect(resolutionError.candidates).toEqual([firstVault, secondVault]);
+      } finally {
+        await rm(baseDir, { recursive: true, force: true });
       }
     });
 
@@ -108,7 +186,7 @@ describe('vault', () => {
         process.chdir(baseDir);
         delete process.env['BWRB_VAULT'];
 
-        const result = resolveVaultDir({ vault: relativeVault });
+        const result = await resolveVaultDir({ vault: relativeVault });
         expect(result).toBe(relativeVault);
       } finally {
         await rm(baseDir, { recursive: true, force: true });
@@ -125,7 +203,7 @@ describe('vault', () => {
         process.chdir(join(baseDir, 'work'));
         process.env['BWRB_VAULT'] = '../other-vault';
 
-        const result = resolveVaultDir({});
+        const result = await resolveVaultDir({});
         expect(result).toBe('../other-vault');
       } finally {
         await rm(baseDir, { recursive: true, force: true });
@@ -135,8 +213,8 @@ describe('vault', () => {
     it('should error when --vault does not contain a schema', async () => {
       const nonVaultDir = await mkdtemp(join(tmpdir(), 'bwrb-bad-vault-'));
       try {
-        expect(() => resolveVaultDir({ vault: nonVaultDir })).toThrow(/Invalid --vault path/);
-        expect(() => resolveVaultDir({ vault: nonVaultDir })).toThrow(/\.bwrb\/schema\.json/);
+        await expect(resolveVaultDir({ vault: nonVaultDir })).rejects.toThrow(/Invalid --vault path/);
+        await expect(resolveVaultDir({ vault: nonVaultDir })).rejects.toThrow(/\.bwrb\/schema\.json/);
       } finally {
         await rm(nonVaultDir, { recursive: true, force: true });
       }
@@ -149,7 +227,7 @@ describe('vault', () => {
         process.chdir(cwdDir);
         process.env['BWRB_VAULT'] = nonVaultDir;
 
-        expect(() => resolveVaultDir({})).toThrow(/Invalid BWRB_VAULT/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/Invalid BWRB_VAULT/);
       } finally {
         await rm(nonVaultDir, { recursive: true, force: true });
         await rm(cwdDir, { recursive: true, force: true });
@@ -162,10 +240,11 @@ describe('vault', () => {
         process.chdir(nonVaultDir);
         delete process.env['BWRB_VAULT'];
 
-        expect(() => resolveVaultDir({})).toThrow(/searched upward/);
-        expect(() => resolveVaultDir({})).toThrow(/\.bwrb\/schema\.json/);
-        expect(() => resolveVaultDir({})).toThrow(/--vault/);
-        expect(() => resolveVaultDir({})).toThrow(/bwrb init/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/searched upward/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/downward for vaults/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/\.bwrb\/schema\.json/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/--vault/);
+        await expect(resolveVaultDir({})).rejects.toThrow(/bwrb init/);
       } finally {
         await rm(nonVaultDir, { recursive: true, force: true });
       }

@@ -15,10 +15,12 @@ import { join } from 'path';
 import chalk from 'chalk';
 
 import { loadSchema, detectObsidianVault } from '../lib/schema.js';
-import { resolveVaultDir } from '../lib/vault.js';
+import { resolveVaultDirWithSelection } from '../lib/vaultSelection.js';
 import { promptInput, promptSelection } from '../lib/prompt.js';
 import { getGlobalOpts } from '../lib/command.js';
+import { ExitCodes } from '../lib/output.js';
 import type { Config } from '../types/schema.js';
+import { UserCancelledError } from '../lib/errors.js';
 
 const SCHEMA_PATH = '.bwrb/schema.json';
 
@@ -90,7 +92,10 @@ configCommand
     const jsonMode = opts.output === 'json';
     
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schema = await loadSchema(vaultDir);
       const rawConfig = schema.raw.config ?? {};
       
@@ -145,6 +150,14 @@ configCommand
         }
       }
     } catch (error) {
+      if (error instanceof UserCancelledError) {
+        if (jsonMode) {
+          console.log(JSON.stringify({ success: false, error: 'Cancelled' }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       if (jsonMode) {
         console.log(JSON.stringify({ success: false, error: String(error) }));
       } else {
@@ -164,7 +177,10 @@ configCommand
     const jsonMode = opts.output === 'json';
     
     try {
-      const vaultDir = resolveVaultDir(getGlobalOpts(cmd));
+      const globalOpts = getGlobalOpts(cmd);
+      const vaultOptions: { vault?: string; jsonMode: boolean } = { jsonMode };
+      if (globalOpts.vault) vaultOptions.vault = globalOpts.vault;
+      const vaultDir = await resolveVaultDirWithSelection(vaultOptions);
       const schemaPath = join(vaultDir, SCHEMA_PATH);
       
       // Load existing schema
@@ -265,6 +281,14 @@ configCommand
         }
       }
     } catch (error) {
+      if (error instanceof UserCancelledError) {
+        if (jsonMode) {
+          console.log(JSON.stringify({ success: false, error: 'Cancelled' }));
+          process.exit(ExitCodes.VALIDATION_ERROR);
+        }
+        console.log('Cancelled.');
+        process.exit(1);
+      }
       if (jsonMode) {
         console.log(JSON.stringify({ success: false, error: String(error) }));
       } else {
